@@ -226,6 +226,7 @@ end
 local function showLatency(frame, totalSeconds)
 	frame.Latency:Hide()
 	if not CUF.db.castbar.showLatency or frame.unit ~= "player" then return end
+	totalSeconds = CUF.SafeNumber(totalSeconds)
 	if not totalSeconds or totalSeconds <= 0 then return end
 
 	local ok, _, _, lagHome, lagWorld = pcall(GetNetStats)
@@ -298,8 +299,10 @@ local function attachDuration(frame, channeling)
 	-- A channel should drain.  When the remaining time is readable we drive it
 	-- ourselves, which is exact; otherwise ask the engine for a reversed fill.
 	if channeling and duration.GetRemainingDuration then
-		local readable, remaining = pcall(duration.GetRemainingDuration, duration)
-		if readable and type(remaining) == "number" and remaining > 0 then
+		local readable, raw = pcall(duration.GetRemainingDuration, duration)
+		-- type(secret number) is still "number"; only arithmetic gives it away.
+		local remaining = readable and CUF.SafeNumber(raw) or nil
+		if remaining and remaining > 0 then
 			frame.channelTotal = remaining
 			frame.manualDrain = true
 			frame.duration = duration
@@ -334,8 +337,8 @@ local function attachDuration(frame, channeling)
 
 	local total
 	if duration.GetRemainingDuration then
-		local ok2, remaining = pcall(duration.GetRemainingDuration, duration)
-		if ok2 and type(remaining) == "number" then total = remaining end
+		local ok2, raw = pcall(duration.GetRemainingDuration, duration)
+		if ok2 then total = CUF.SafeNumber(raw) end   -- plain number or nil
 	end
 	return true, total
 end
@@ -429,7 +432,7 @@ local function startCast(frame)
 		end
 	end
 
-	frame.castTotal = total
+	frame.castTotal = CUF.SafeNumber(total)
 	showLatency(frame, total)
 	frame:Show()
 end
@@ -444,7 +447,7 @@ local function onUpdate(frame)
 	local function setTime(remaining)
 		if not settings.showTime then
 			frame.Time:SetText("")
-		elseif settings.showTotal and frame.castTotal then
+		elseif settings.showTotal and CUF.SafeNumber(frame.castTotal) then
 			frame.Time:SetText(CUF.SafeFormat("%.1f / %.1f", remaining, frame.castTotal))
 		else
 			frame.Time:SetText(CUF.SafeFormat("%.1f", remaining))
@@ -452,19 +455,24 @@ local function onUpdate(frame)
 	end
 
 	if frame.manualDrain and frame.duration then
-		local ok, remaining = pcall(frame.duration.GetRemainingDuration, frame.duration)
-		if ok and type(remaining) == "number" then
-			if remaining <= 0 then stopCast(frame) return end
-			frame.Bar:SetValue(remaining)
-			setTime(remaining)
+		local ok, raw = pcall(frame.duration.GetRemainingDuration, frame.duration)
+		if ok then
+			-- SetValue takes a secret happily; comparing one does not.
+			pcall(frame.Bar.SetValue, frame.Bar, raw)
+			local remaining = CUF.SafeNumber(raw)
+			if remaining then
+				if remaining <= 0 then stopCast(frame) return end
+				setTime(remaining)
+			end
 		end
 		return
 	end
 
 	if frame.engineTimed then
 		if frame.duration and frame.duration.GetRemainingDuration then
-			local ok, remaining = pcall(frame.duration.GetRemainingDuration, frame.duration)
-			if ok and type(remaining) == "number" then setTime(remaining) else frame.Time:SetText("") end
+			local ok, raw = pcall(frame.duration.GetRemainingDuration, frame.duration)
+			local remaining = ok and CUF.SafeNumber(raw) or nil
+			if remaining then setTime(remaining) else frame.Time:SetText("") end
 		else
 			frame.Time:SetText("")
 		end

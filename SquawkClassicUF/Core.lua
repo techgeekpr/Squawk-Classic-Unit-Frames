@@ -96,7 +96,14 @@ CUF.ClassColors = {
 -- Reading a secret throws, so every numeric read for *text* comes through
 -- here.  Bars never use this: they pass the secret straight to SetValue.
 function CUF.SafeNumber(value)
-	local ok, result = pcall(function() return value + 0 end)
+	-- Arithmetic alone is not proof: a secret number still answers "number"
+	-- to type(), and only throws when compared.  Do both inside the pcall so
+	-- what comes back is provably usable.
+	local ok, result = pcall(function()
+		local n = value + 0
+		local _ = n > 0
+		return n
+	end)
 	if ok and type(result) == "number" then return result end
 	return nil
 end
