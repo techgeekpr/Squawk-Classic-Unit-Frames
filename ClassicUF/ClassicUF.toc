@@ -1,0 +1,23 @@
+## Interface: 11601
+## Title: Squawk Classic Unit Frames
+## Notes: Classic 1.12 style player, target, party and raid frames for WoW: Forever.
+## Version: 1.0.0
+## SavedVariables: ClassicUFDB
+## IconTexture: Interface\TargetingFrame\UI-TargetingFrame
+
+# SavedVariables restore shim -- this client writes SavedVariables but never
+# restores them, so we load last session's file ourselves through junctions.
+SV1\ClassicUF.lua
+Restore1.lua
+SV2\ClassicUF.lua
+Restore2.lua
+SV3\ClassicUF.lua
+Restore3.lua
+
+Core.lua
+Units.lua
+Group.lua
+Auras.lua
+Cast.lua
+ActionBars.lua
+Options.lua

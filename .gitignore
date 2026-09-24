@@ -1,0 +1,7 @@
+# Directory junctions to the game's SavedVariables folders -- machine specific,
+# and they point at every addon's data, so they must never be committed.
+ClassicUF/SV1/
+ClassicUF/SV2/
+ClassicUF/SV3/
+*.bak
+*.old
