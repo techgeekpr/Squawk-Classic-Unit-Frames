@@ -393,15 +393,21 @@ local function startCast(frame)
 	frame.Icon:SetShown(showIcon)
 	frame.IconBorder:SetShown(showIcon)
 
-	local r, g, b
-	if notInterruptible then
-		r, g, b = 0.6, 0.6, 0.6
-	elseif channeling then
-		r, g, b = 0.2, 0.7, 1
-	else
-		r, g, b = 1, 0.7, 0
-	end
+	-- notInterruptible is a *secret boolean* on this client: testing it throws
+	-- ("boolean test on a secret boolean value").  Colour from what we know
+	-- for certain, then let the widget consume the secret itself to grey out
+	-- an uninterruptible cast.
+	local r, g, b = 1, 0.7, 0
+	if channeling then r, g, b = 0.2, 0.7, 1 end
+
 	frame.Bar:SetStatusBarColor(r, g, b)
+	if frame.Fallback then frame.Fallback:SetVertexColor(r, g, b) end
+
+	local fillTexture = frame.Bar:GetStatusBarTexture()
+	if fillTexture and fillTexture.SetVertexColorFromBoolean then
+		pcall(fillTexture.SetVertexColorFromBoolean, fillTexture, notInterruptible,
+			0.6, 0.6, 0.6, r, g, b)
+	end
 
 	local attached, total = attachDuration(frame, channeling)
 	if not attached then
