@@ -153,6 +153,7 @@ local function updateAll(frame)
 	updatePortrait(frame)
 	updateClassification(frame)
 	updatePvP(frame)
+	CUF:UpdateRaidTargetIcon(frame)
 	updateAuras(frame)
 end
 
@@ -330,6 +331,11 @@ function Units:CreateLargeFrame(key, unit, mirrored, label)
 	end
 	frame.PvPIcon:Hide()
 
+	-- The raid marker sits on the top edge of the portrait.  Anchoring it to
+	-- the portrait rather than the frame means it follows the mirroring.
+	CUF:CreateRaidTargetIcon(frame, frame.ArtFrame, 22)
+	frame.RaidIcon:SetPoint("CENTER", frame.Portrait, "TOP", 0, 0)
+
 	frame.Name = frame.ArtFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 	frame.Name:SetSize(100, 12)
 	frame.Name:SetPoint("CENTER", frame, "CENTER", mirrored and -34 or 34, 15)
@@ -456,6 +462,9 @@ function Units:CreateToTFrame(key, unit, label)
 	frame.Dead:Hide()
 
 	frame.UpdateAll = updateAll
+	CUF:CreateRaidTargetIcon(frame, frame.ArtFrame, 14)
+	frame.RaidIcon:SetPoint("CENTER", frame.Portrait, "TOP", 0, 0)
+
 	CUF:AttachTooltip(frame)
 	makeMovable(frame)
 	return frame
@@ -503,6 +512,9 @@ function Units:CreatePetFrame(key, unit, label)
 	frame.Dead:Hide()
 
 	frame.UpdateAll = updateAll
+	CUF:CreateRaidTargetIcon(frame, frame.ArtFrame, 14)
+	frame.RaidIcon:SetPoint("CENTER", frame.Portrait, "TOP", 0, 0)
+
 	CUF:AttachTooltip(frame)
 	makeMovable(frame)
 	return frame
@@ -692,10 +704,14 @@ local function registerUnitEvents(frame)
 			updatePortrait(self)
 		elseif event == "UNIT_AURA" then
 			updateAuras(self)
+		elseif event == "RAID_TARGET_UPDATE" then
+			CUF:UpdateRaidTargetIcon(self)
 		end
 	end)
 
 	frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+	-- Not a unit event: marking anyone fires it for every frame.
+	frame:RegisterEvent("RAID_TARGET_UPDATE")
 	for _, event in ipairs({
 		"UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_POWER_UPDATE", "UNIT_MAXPOWER",
 		"UNIT_DISPLAYPOWER", "UNIT_NAME_UPDATE", "UNIT_LEVEL", "UNIT_FACTION",

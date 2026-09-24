@@ -74,6 +74,8 @@ local function updateFrame(frame)
 		CUF.Auras:Update(frame)
 	end
 
+	CUF:UpdateRaidTargetIcon(frame)
+
 	if frame.HealthText then
 		frame.HealthText:SetText(CUF.HealthText(unit, CUF.db.healthText))
 	end
@@ -102,6 +104,8 @@ end
 
 local function registerEvents(frame)
 	frame:SetScript("OnEvent", function(self) updateFrame(self) end)
+	-- Not a unit event: marking anyone fires it for every frame.
+	frame:RegisterEvent("RAID_TARGET_UPDATE")
 	for _, event in ipairs({
 		"UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_POWER_UPDATE", "UNIT_MAXPOWER",
 		"UNIT_DISPLAYPOWER", "UNIT_NAME_UPDATE", "UNIT_PORTRAIT_UPDATE",
@@ -171,6 +175,9 @@ function Group:CreatePartyFrame(index)
 	frame.StatusText:SetPoint("CENTER", frame.Health, "CENTER", 0, 0)
 	frame.StatusText:SetTextColor(1, 0.2, 0.2)
 	frame.StatusText:Hide()
+
+	CUF:CreateRaidTargetIcon(frame, frame.ArtFrame, 16)
+	frame.RaidIcon:SetPoint("CENTER", frame.Portrait, "TOP", 0, 0)
 
 	CUF:AttachTooltip(frame)
 	registerEvents(frame)
@@ -249,6 +256,9 @@ function Group:CreateCompactFrame(name, unit)
 	frame.DispelIcon:SetPoint("RIGHT", frame, "RIGHT", -2, 0)
 	frame.DispelIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 	frame.DispelIcon:Hide()
+
+	CUF:CreateRaidTargetIcon(frame, frame.Overlay, 14)
+	frame.RaidIcon:SetPoint("TOPLEFT", frame, "TOPLEFT", 2, -2)
 
 	CUF:AttachTooltip(frame)
 	registerEvents(frame)

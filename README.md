@@ -26,6 +26,9 @@ target-of-target and pet frames use their real Classic art.
 - **Raid** — up to 40 frames, arranged by raid group, with class colours,
   out-of-range fading, and indicators for buffs you can cast that are missing
   and debuffs you can dispel, both filtered to your own class.
+- **Raid target marks** — the star, circle, diamond, triangle, moon, square,
+  cross and skull, on every frame: player, target, target of target, focus,
+  pet, party and raid. Sized independently of the frames.
 - **Cast bars** — Quartz style by default: slim bar, one pixel border, icon
   outside on the left, spell name and countdown inside, a latency zone shaded
   at the end, and a red flash on interrupt. The Classic cast bar art is
@@ -103,7 +106,22 @@ layout change queues until `PLAYER_REGEN_ENABLED`.
 
 The same rule applies to range checking: `UnitInRange` returns *secret
 booleans*, which cannot be tested at all. Fading uses `SetAlphaFromBoolean`,
-which consumes the secret without the addon ever reading it.
+which consumes the secret without the addon ever reading it — note it takes
+the alpha for true **and** the alpha for false, not just the boolean.
+
+**Secrets are not limited to health and range.** `GetRaidTargetIndex` returns
+a secret *number*: `type()` reports `"number"` and `tostring()` prints it, but
+`==`, `+` and `>` all throw. That combination is vicious, because the obvious
+guard — checking `type()` — passes and the code then dies on the comparison.
+`CUF.SafeNumber` exists for this: it attempts the arithmetic *and* a
+comparison inside `pcall`, so only a genuinely readable number gets through.
+
+Unlike a secret boolean, a secret number can be laundered: `tonumber`,
+`tostring` and `string.format` all succeed where the operators fail. The raid
+markers try Blizzard's own `SetRaidTargetIconTexture` first, then `tonumber`,
+then a string round-trip, and `/cuf marks` reports which route won. Run
+`/cuf probe` against any other value you suspect is secret — it prints exactly
+which operations that client permits.
 
 ## Commands
 
@@ -113,6 +131,8 @@ which consumes the secret without the addon ever reading it.
 /cuf lock         put them away
 /cuf scale <n>    set every frame's scale at once (0.5 - 2)
 /cuf art          check which Classic textures this client actually ships
+/cuf marks        raid target marks: setting, atlas, API, and per-frame state
+/cuf probe        which operations this client permits on a secret value
 /cuf bars         re-apply the action bar skin and report what it found
 /cuf castdiag     cast bar diagnostics: APIs, art, and what each bar is doing
 /cuf casttest     show both cast bars filled for five seconds

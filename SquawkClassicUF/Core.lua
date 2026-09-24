@@ -43,6 +43,7 @@ CUF.Art = {
 	pvpFFA      = "Interface\\TargetingFrame\\UI-PVP-FFA",
 	castFill     = "Interface\\CastingBar\\UI-CastingBar-Fill",
 	castBorder   = "Interface\\CastingBar\\UI-CastingBar-Border",
+	raidIcons    = "Interface\\TargetingFrame\\UI-RaidTargetingIcons",
 	playerStatus = "Interface\\CharacterFrame\\UI-Player-Status",
 	flat         = "Interface\\Buttons\\WHITE8X8",
 }
@@ -185,6 +186,8 @@ CUF.Defaults = {
 	showLevel = true,
 	showPortraits = true,
 	showRestIcon = true,
+	showRaidIcons = true,           -- the star, circle, moon and so on
+	raidIconScale = 1.0,
 	barTexture = "classic",        -- classic | flat
 	fontSize = 10,
 
@@ -388,6 +391,253 @@ CUF.TooltipAnchors = {
 	{ "cursor",  "At the cursor" },
 }
 
+-- ---------------------------------------------------------------------------
+-- raid target markers
+-- ---------------------------------------------------------------------------
+
+-- The eight marks share one atlas, four to a row, indexed left to right and
+-- top to bottom.  Blizzard ships SetRaidTargetIconTexture to slice it; use
+-- that when it exists so a future atlas change follows the game rather than
+-- this arithmetic.
+local function setMarkCoords(texture, index)
+	if type(SetRaidTargetIconTexture) == "function"
+		and pcall(SetRaidTargetIconTexture, texture, index) then
+		return true
+	end
+	local zero = index - 1
+	local left = (zero % 4) * 0.25
+	local top = math.floor(zero / 4) * 0.25
+	return pcall(texture.SetTexCoord, texture, left, left + 0.25, top, top + 0.25)
+end
+
+-- The marker must sit above the frame art and the bars, so it is drawn on the
+-- overlay frame the caller passes rather than on the unit frame itself.
+-- This client hands back the marker as a SECRET number: type() says "number",
+-- but any arithmetic or comparison on it throws, so it can never be read.
+--
+-- The fix is the same one the health bars use -- do not read it.  All eight
+-- marks are built up front, each with its texture coordinates already set,
+-- and the secret only ever decides which one is opaque.  "raw == index"
+-- yields a secret boolean, and SetAlphaFromBoolean consumes that without the
+-- addon ever learning the answer.
+-- Every shape this client might expose the marker in.  Midnight moved a lot
+-- of globals into C_ namespaces, and a missing global inside a pcall fails
+-- exactly like an unmarked unit, so each source is tried explicitly and the
+-- one that answered is remembered for /cuf marks.
+CUF.MarkSource = nil
+
+local function rawMarkIndex(unit)
+	if type(GetRaidTargetIndex) == "function" then
+		local ok, value = pcall(GetRaidTargetIndex, unit)
+		if ok then return value, "GetRaidTargetIndex" end
+	end
+	if type(C_RaidTarget) == "table" and type(C_RaidTarget.GetRaidTargetIndex) == "function" then
+		local ok, value = pcall(C_RaidTarget.GetRaidTargetIndex, unit)
+		if ok then return value, "C_RaidTarget.GetRaidTargetIndex" end
+	end
+	if type(UnitRaidTargetIndex) == "function" then
+		local ok, value = pcall(UnitRaidTargetIndex, unit)
+		if ok then return value, "UnitRaidTargetIndex" end
+	end
+	return nil, nil
+end
+
+function CUF:CreateRaidTargetIcon(frame, parent, size)
+	local holder = CreateFrame("Frame", nil, parent)
+	holder:SetSize(size, size)
+	holder:SetFrameLevel(parent:GetFrameLevel() + 5)
+	holder.baseSize = size
+
+	holder.Texture = holder:CreateTexture(nil, "OVERLAY")
+	holder.Texture:SetDrawLayer("OVERLAY", 7)
+	holder.Texture:SetTexture(CUF.Art.raidIcons)
+	holder.Texture:SetAllPoints(holder)
+
+	holder:Hide()
+	frame.RaidIcon = holder
+	return holder
+end
+
+-- Which route produced the marker, for /cuf marks to report.
+CUF.MarkMode = nil
+
+-- GetRaidTargetIndex hands back a SECRET number here: type() says "number"
+-- and tostring() prints it, but "==", "+" and ">" all throw, so it cannot be
+-- read or compared.  /cuf probe established what does work:
+--
+--   raw == 1        throws        tonumber(raw)    ok -> 8
+--   raw + 0         throws        ("%d"):format()  ok -> "8"
+--   raw > 0         throws        tostring(raw)    ok -> "8"
+--
+-- So there are three ways out, tried strongest first: hand the untouched
+-- value to Blizzard's own helper, coerce it with tonumber, or round-trip it
+-- through a string.  Whichever works is recorded rather than assumed.
+function CUF:UpdateRaidTargetIcon(frame)
+	local icon = frame and frame.RaidIcon
+	if not icon or not icon.Texture then return end
+
+	local unit = frame.unit
+	if not CUF.db.showRaidIcons or not unit or not UnitExists(unit) then
+		icon:Hide()
+		return
+	end
+
+	local raw, source = rawMarkIndex(unit)
+	if source then CUF.MarkSource = source end
+	if raw == nil then
+		icon:Hide()
+		return
+	end
+
+	local size = (icon.baseSize or 20) * (CUF.db.raidIconScale or 1)
+	icon:SetSize(size, size)
+
+	-- 1. Blizzard's own helper, handed the value untouched.  Their frames draw
+	--    these markers too, so if anything is secret-aware it is this.
+	if type(SetRaidTargetIconTexture) == "function"
+		and pcall(SetRaidTargetIconTexture, icon.Texture, raw) then
+		CUF.MarkMode = "SetRaidTargetIconTexture"
+		icon:Show()
+		return
+	end
+
+	-- 2. and 3. launder it into a plain number, then slice the atlas ourselves.
+	local index = CUF.SafeNumber(raw)
+	local mode = "readable"
+	if not index then
+		local ok, coerced = pcall(tonumber, raw)
+		index = ok and CUF.SafeNumber(coerced) or nil
+		mode = "tonumber"
+	end
+	if not index then
+		local ok, text = pcall(function() return ("%d"):format(raw) end)
+		index = ok and CUF.SafeNumber(tonumber(text)) or nil
+		mode = "string round-trip"
+	end
+
+	if index and index >= 1 and index <= 8 and setMarkCoords(icon.Texture, index) then
+		CUF.MarkMode = mode
+		icon:Show()
+		return
+	end
+
+	CUF.MarkMode = "unreadable"
+	icon:Hide()
+end
+
+-- Three attempts at this feature have failed on assumptions about what the
+-- client permits.  This asks it directly instead: which operations on a
+-- secret marker index are legal, and what the client actually offers for
+-- drawing one.
+function CUF:ProbeMarks()
+	CUF:Print("---- raid marker probe ----")
+
+	if not UnitExists("target") then
+		CUF:Print("target a MARKED player or npc first, then run this again")
+		return
+	end
+
+	local raw = rawMarkIndex("target")
+	CUF:Print(("raw: type=%s tostring=%s"):format(type(raw), tostring(raw)))
+
+	local order = { "raw == 1", "raw + 0", "raw > 0", "tonumber(raw)", "string.format", "tostring" }
+	local tests = {
+		["raw == 1"]     = function() return raw == 1 end,
+		["raw + 0"]      = function() return raw + 0 end,
+		["raw > 0"]      = function() return raw > 0 end,
+		["tonumber(raw)"]= function() return tonumber(raw) end,
+		["string.format"]= function() return ("%d"):format(raw) end,
+		["tostring"]     = function() return tostring(raw) end,
+	}
+	for _, label in ipairs(order) do
+		local ok, result = pcall(tests[label])
+		CUF:Print(("  %-14s %s -> %s (%s)"):format(label,
+			ok and "|cff00ff00ok|r    " or "|cffff0000throws|r",
+			ok and tostring(result) or "-", ok and type(result) or "-"))
+	end
+
+	local globals = {}
+	for name in pairs(_G) do
+		if type(name) == "string" and name:lower():find("raidtarget") then
+			globals[#globals + 1] = name
+		end
+	end
+	table.sort(globals)
+	CUF:Print("globals matching 'raidtarget': " .. (#globals > 0 and table.concat(globals, ", ") or "|cffff0000none|r"))
+
+	local function methodsOf(object, label)
+		local index = getmetatable(object)
+		index = index and index.__index
+		if type(index) ~= "table" then
+			CUF:Print(label .. " methods: |cffff0000cannot enumerate|r")
+			return
+		end
+		local hits = {}
+		for name in pairs(index) do
+			local lower = tostring(name):lower()
+			if lower:find("raid") or lower:find("secret") or lower:find("fromboolean")
+				or lower:find("texcoord") or lower:find("atlas") then
+				hits[#hits + 1] = name
+			end
+		end
+		table.sort(hits)
+		CUF:Print(label .. " methods: " .. (#hits > 0 and table.concat(hits, ", ") or "|cffff0000none|r"))
+	end
+
+	methodsOf(UIParent:CreateTexture(nil, "BACKGROUND"), "texture")
+	methodsOf(UIParent, "frame")
+end
+
+function CUF:MarkDiagnostics()
+	CUF:Print("---- raid target marks ----")
+	CUF:Print(("setting: %s   scale: %s"):format(
+		CUF.db.showRaidIcons and "|cff00ff00on|r" or "|cffff0000OFF|r",
+		tostring(CUF.db.raidIconScale)))
+	CUF:Print(("atlas: %s %s"):format(
+		CUF:TextureExists(CUF.Art.raidIcons) and "|cff00ff00present|r" or "|cffff0000MISSING|r",
+		CUF.Art.raidIcons))
+	CUF:Print(("GetRaidTargetIndex: %s   C_RaidTarget: %s   SetRaidTargetIconTexture: %s"):format(
+		type(GetRaidTargetIndex), type(C_RaidTarget), type(SetRaidTargetIconTexture)))
+	local probe = UIParent:CreateTexture(nil, "BACKGROUND")
+	CUF:Print(("SetAlphaFromBoolean on a texture: %s   mode in use: %s"):format(
+		type(probe.SetAlphaFromBoolean), tostring(CUF.MarkMode)))
+
+	if UnitExists("target") then
+		local raw, source = rawMarkIndex("target")
+		CUF:Print(("target: source=%s raw=%s type=%s safe=%s"):format(
+			tostring(source), tostring(raw), type(raw), tostring(CUF.SafeNumber(raw))))
+		local compares = pcall(function() local _ = (raw == 1) end)
+		local feeds = pcall(function() probe:SetAlphaFromBoolean(raw == 1, 1, 0) end)
+		CUF:Print(("  equality test: %s   SetAlphaFromBoolean accepts it: %s"):format(
+			compares and "|cff00ff00ok|r" or "|cffff0000throws|r",
+			feeds and "|cff00ff00yes|r" or "|cffff0000no|r"))
+	else
+		CUF:Print("no target - mark someone and target them, then run this again")
+	end
+
+	local function report(label, frame)
+		if not frame then CUF:Print(("%s: |cffff0000no frame|r"):format(label)) return end
+		local icon = frame.RaidIcon
+		if not icon then CUF:Print(("%s: |cffff0000no icon created|r"):format(label)) return end
+		local w, h = icon:GetSize()
+		local point, relTo, relPoint, x, y = icon:GetPoint()
+		CUF:Print(("%s: shown=%s size=%.0fx%.0f alpha=%.1f point=%s->%s(%s) %.0f,%.0f parentShown=%s"):format(
+			label, tostring(icon:IsShown()), w or 0, h or 0, icon:GetAlpha() or 0,
+			tostring(point), tostring(relPoint),
+			(relTo and relTo.GetName and relTo:GetName()) or "anon",
+			x or 0, y or 0, tostring(frame:IsShown())))
+	end
+
+	for _, key in ipairs({ "player", "target", "targettarget", "focus", "pet" }) do
+		report(key, CUF.Units and CUF.Units.frames and CUF.Units.frames[key])
+	end
+	if CUF.Group then
+		report("party1", CUF.Group.party and CUF.Group.party[1])
+		report("partyCompact1", CUF.Group.partyCompact and CUF.Group.partyCompact[1])
+		report("raid1", CUF.Group.raid and CUF.Group.raid[1])
+	end
+end
+
 function CUF:AttachTooltip(frame)
 	frame:SetScript("OnEnter", function(self)
 		if not CUF.db.tooltips then return end
@@ -537,7 +787,7 @@ function CUF:ShowArtCheck()
 		title:SetText("Classic art check - anything blank or green is missing from this client")
 
 		local y = -40
-		for _, name in ipairs({ "frame", "statusBar", "partyFrame", "totFrame", "smallFrame", "castFill", "castBorder" }) do
+		for _, name in ipairs({ "frame", "statusBar", "partyFrame", "totFrame", "smallFrame", "castFill", "castBorder", "raidIcons" }) do
 			local label = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 			label:SetPoint("TOPLEFT", f, "TOPLEFT", 16, y - 14)
 			label:SetText(name .. ":")
@@ -637,6 +887,10 @@ local function handleSlash(msg)
 		CUF:Print("frames locked")
 	elseif cmd == "art" then
 		CUF:ShowArtCheck()
+	elseif cmd == "marks" or cmd == "mark" then
+		CUF:MarkDiagnostics()
+	elseif cmd == "probe" then
+		CUF:ProbeMarks()
 	elseif cmd == "castdiag" or cmd == "cast" then
 		CUF:CastDiagnostics()
 	elseif cmd == "auradiag" or cmd == "auras" then
@@ -659,7 +913,7 @@ local function handleSlash(msg)
 		CUF:RunProtected(function() CUF:ApplyAll() end)
 		CUF:Print("scale set to " .. scale)
 	else
-		CUF:Print("/cuf | unlock | lock | scale <0.5-2> | art | bars | castdiag | casttest | auradiag | reset")
+		CUF:Print("/cuf | unlock | lock | scale <0.5-2> | art | marks | probe | bars | castdiag | casttest | auradiag | reset")
 	end
 end
 

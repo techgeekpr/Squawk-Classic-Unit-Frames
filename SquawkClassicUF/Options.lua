@@ -293,6 +293,17 @@ function Options:Initialize()
 		function() return db().showLevel end,
 		function(v) db().showLevel = v end)
 	y = y - ROW
+	checkbox(page, c1, y, "Show raid target marks",
+		function() return db().showRaidIcons end,
+		function(v) db().showRaidIcons = v end,
+		"The star, circle, diamond and so on, shown on every frame: "
+		.. "player, target, target of target, focus, pet, party and raid.")
+	y = y - WIDE_ROW
+	stepper(page, c1, y, "Mark size",
+		function() return db().raidIconScale end,
+		function(v) db().raidIconScale = v end,
+		0.1, 0.5, 2.0, "%.1f")
+	y = y - ROW
 	checkbox(page, c1, y, "Hide Blizzard's frames",
 		function() return db().hideBlizzard end,
 		function(v)
