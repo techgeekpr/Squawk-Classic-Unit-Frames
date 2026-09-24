@@ -2,6 +2,8 @@
 
 Classic 1.12 style unit frames for the **World of Warcraft: Forever** beta.
 
+Made by **Avoid Me** of **&lt;Squawk&gt;**.
+
 Forever runs Classic content on the Midnight (12.x) addon API, so the shipped
 frames look like retail. This rebuilds them in the original style — player,
 target, target of target, focus, pet, party and raid frames, cast bars, and a
@@ -127,6 +129,9 @@ looks wrong, they will usually say why in one line.
 | `Options.lua` | five-tab options panel |
 
 ## Credits
+
+Written by Avoid Me of &lt;Squawk&gt;.
+
 
 Geometry and art paths come from Blizzard's Classic `FrameXML`, read from the
 [wow-ui-source](https://github.com/Gethe/wow-ui-source) mirror, which carries a

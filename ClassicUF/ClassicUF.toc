@@ -1,7 +1,8 @@
 ## Interface: 11601
 ## Title: Squawk Classic Unit Frames
-## Notes: Classic 1.12 style player, target, party and raid frames for WoW: Forever.
+## Notes: Classic 1.12 style player, target, party and raid frames for WoW: Forever. Made by Avoid Me of <Squawk>.
 ## Version: 1.0.0
+## Author: Avoid Me <Squawk>
 ## SavedVariables: ClassicUFDB
 ## IconTexture: Interface\TargetingFrame\UI-TargetingFrame
 

@@ -227,6 +227,10 @@ function Options:Initialize()
 	title:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, -14)
 	title:SetText("Squawk Classic Unit Frames " .. CUF.Version)
 
+	local credit = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	credit:SetPoint("LEFT", title, "RIGHT", 10, 0)
+	credit:SetText("|cffffd100Made by: Avoid Me|r |cff82c5ff<Squawk>|r")
+
 	local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -3)
 	subtitle:SetWidth(660)
