@@ -8,7 +8,7 @@
 	each page still scrolls if it outgrows the canvas.
 ]]
 
-local CUF = ClassicUF
+local CUF = SquawkClassicUF
 local Options = {}
 CUF.Options = Options
 
@@ -217,15 +217,15 @@ end
 -- ---------------------------------------------------------------------------
 
 function Options:Initialize()
-	local panel = CreateFrame("Frame", "ClassicUF_Options", UIParent, "BackdropTemplate")
+	local panel = CreateFrame("Frame", "SquawkClassicUF_Options", UIParent, "BackdropTemplate")
 	Options.Panel = panel
-	panel.name = "Squawk CUF"
+	panel.name = "Squawk ClassicUF"
 	panel:SetSize(700, 540)
 	panel:Hide()
 
 	local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 	title:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, -14)
-	title:SetText("Squawk Classic Unit Frames " .. CUF.Version)
+	title:SetText("Squawk ClassicUF " .. CUF.Version)
 
 	local credit = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 	credit:SetPoint("LEFT", title, "RIGHT", 10, 0)
@@ -629,14 +629,14 @@ function Options:Initialize()
 	reset:SetSize(150, 22)
 	reset:SetPoint("LEFT", artCheck, "RIGHT", 10, 0)
 	reset:SetText("Reset to defaults")
-	reset:SetScript("OnClick", function() SlashCmdList["CLASSICUF"]("reset") Options:Refresh() end)
+	reset:SetScript("OnClick", function() SlashCmdList["SQUAWKCLASSICUF"]("reset") Options:Refresh() end)
 
 	panel:SetScript("OnShow", function() Options:Refresh() end)
 	Options:SelectTab(1)
 
 	-- register with whatever settings system exists, else stand alone
 	if type(Settings) == "table" and Settings.RegisterCanvasLayoutCategory then
-		local ok, category = pcall(Settings.RegisterCanvasLayoutCategory, panel, "Squawk CUF")
+		local ok, category = pcall(Settings.RegisterCanvasLayoutCategory, panel, "Squawk ClassicUF")
 		if ok and category then
 			Options.Category = category
 			pcall(Settings.RegisterAddOnCategory, category)

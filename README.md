@@ -1,4 +1,4 @@
-# Squawk Classic Unit Frames
+# Squawk ClassicUF
 
 Classic 1.12 style unit frames for the **World of Warcraft: Forever** beta.
 
@@ -40,7 +40,7 @@ target-of-target and pet frames use their real Classic art.
 
 ## Installing
 
-Copy the `ClassicUF` folder into:
+Copy the `SquawkClassicUF` folder into:
 
 ```
 World of Warcraft\_classic_beta_\Interface\AddOns\
@@ -54,7 +54,7 @@ The Forever beta **writes SavedVariables correctly but never restores them**,
 so every addon starts each session with an empty database. This addon works
 around it: `SV1`, `SV2` and `SV3` inside the addon folder are directory
 junctions pointing at your `WTF\Account\<id>\SavedVariables` folders, and the
-TOC loads `SV*\ClassicUF.lua` as ordinary addon files, which puts last
+TOC loads `SV*\SquawkClassicUF.lua` as ordinary addon files, which puts last
 session's settings back before `Core.lua` runs. `Restore1-3.lua` park each
 snapshot so the next one cannot clobber it.
 
@@ -66,8 +66,15 @@ powershell -ExecutionPolicy Bypass -File .\Setup-SavedVariables.ps1
 ```
 
 Junctions need no administrator rights. If the client's own restore stage ever
-starts working, the shim becomes redundant rather than harmful — `/cuf diag`
+starts working, the shim becomes redundant rather than harmful — `/squawk diag`
 reports which one is in use.
+
+## Upgrading from ClassicUF
+
+The addon used to be called ClassicUF. The TOC still reads the old saved file
+once and adopts any profile that has no counterpart under the new name, so
+nothing is lost: your frame positions, aura placement and cast bar sizes carry
+over on the first login. It says so in chat when it happens.
 
 ## What this client allows, and what it does not
 

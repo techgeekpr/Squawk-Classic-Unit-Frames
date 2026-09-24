@@ -8,7 +8,7 @@
 	which it is.
 ]]
 
-local CUF = ClassicUF
+local CUF = SquawkClassicUF
 local Auras = {}
 CUF.Auras = Auras
 

@@ -11,7 +11,7 @@
 	ui-hud-actionbar-gryphon atlases), so they are left alone.
 ]]
 
-local CUF = ClassicUF
+local CUF = SquawkClassicUF
 local Bars = {}
 CUF.ActionBars = Bars
 

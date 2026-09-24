@@ -12,7 +12,7 @@
 	time, and everything degrades to a static bar rather than throwing.
 ]]
 
-local CUF = ClassicUF
+local CUF = SquawkClassicUF
 local Cast = {}
 CUF.Cast = Cast
 
@@ -61,7 +61,7 @@ end
 
 local function createBar(key, unit, label)
 	local width, height = sizeFor(unit)
-	local frame = CreateFrame("Frame", "ClassicUF_CastBar_" .. key, UIParent)
+	local frame = CreateFrame("Frame", "SquawkClassicUF_CastBar_" .. key, UIParent)
 	frame:SetSize(width, height)
 	frame.unit = unit
 	frame.label = label

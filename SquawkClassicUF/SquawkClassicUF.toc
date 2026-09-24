@@ -1,19 +1,28 @@
 ## Interface: 11601
-## Title: Squawk Classic Unit Frames
+## Title: Squawk ClassicUF
 ## Notes: Classic 1.12 style player, target, party and raid frames for WoW: Forever. Made by Avoid Me of <Squawk>.
 ## Version: 1.0.0
 ## Author: Avoid Me <Squawk>
-## SavedVariables: ClassicUFDB
+## SavedVariables: SquawkClassicUFDB
 ## IconTexture: Interface\TargetingFrame\UI-TargetingFrame
 
 # SavedVariables restore shim -- this client writes SavedVariables but never
 # restores them, so we load last session's file ourselves through junctions.
-SV1\ClassicUF.lua
+SV1\SquawkClassicUF.lua
 Restore1.lua
-SV2\ClassicUF.lua
+SV2\SquawkClassicUF.lua
 Restore2.lua
-SV3\ClassicUF.lua
+SV3\SquawkClassicUF.lua
 Restore3.lua
+
+# Settings saved while the addon was still called ClassicUF, read once and
+# carried over by Core.lua.
+SV1\ClassicUF.lua
+Legacy1.lua
+SV2\ClassicUF.lua
+Legacy2.lua
+SV3\ClassicUF.lua
+Legacy3.lua
 
 Core.lua
 Units.lua

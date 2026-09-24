@@ -12,7 +12,7 @@ $accounts = Join-Path $base "WTF\Account"
 
 if (-not (Test-Path $accounts)) {
     Write-Host "Could not find $accounts" -ForegroundColor Red
-    Write-Host "Run this from inside Interface\AddOns\ClassicUF in your game folder."
+    Write-Host "Run this from inside Interface\AddOns\SquawkClassicUF in your game folder."
     exit 1
 }
 
@@ -31,12 +31,15 @@ Get-ChildItem $accounts -Directory |
             Write-Host "SV$index -> $($_.Name)"
         }
 
-        # A placeholder keeps the client from logging "Error loading" for a
-        # file that does not exist until the first logout.
-        $file = Join-Path $link "ClassicUF.lua"
-        if (-not (Test-Path $file)) {
-            "-- Placeholder; WoW overwrites this with the real database at logout." |
-                Out-File -FilePath $file -Encoding ascii
+        # Placeholders stop the client logging "Error loading" for files that
+        # do not exist until the first logout.  ClassicUF.lua is the old name,
+        # read once so settings carry over for anyone upgrading.
+        foreach ($name in @("SquawkClassicUF.lua", "ClassicUF.lua")) {
+            $file = Join-Path $link $name
+            if (-not (Test-Path $file)) {
+                "-- Placeholder; WoW overwrites this with the real database at logout." |
+                    Out-File -FilePath $file -Encoding ascii
+            }
         }
     }
 

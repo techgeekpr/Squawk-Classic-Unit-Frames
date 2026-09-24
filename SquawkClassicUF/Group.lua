@@ -9,7 +9,7 @@
 	protected frame cannot be repositioned during combat.
 ]]
 
-local CUF = ClassicUF
+local CUF = SquawkClassicUF
 local Group = {}
 CUF.Group = Group
 
@@ -138,7 +138,7 @@ end
 -- ---------------------------------------------------------------------------
 
 function Group:CreatePartyFrame(index)
-	local frame = makeUnitButton("ClassicUF_Party" .. index, "party" .. index)
+	local frame = makeUnitButton("SquawkClassicUF_Party" .. index, "party" .. index)
 	frame:SetSize(PARTY.width, PARTY.height)
 
 	frame.Portrait = frame:CreateTexture(nil, "BORDER")
@@ -256,7 +256,7 @@ function Group:CreateCompactFrame(name, unit)
 end
 
 function Group:CreateRaidFrame(index)
-	return Group:CreateCompactFrame("ClassicUF_Raid" .. index, "raid" .. index)
+	return Group:CreateCompactFrame("SquawkClassicUF_Raid" .. index, "raid" .. index)
 end
 
 -- ---------------------------------------------------------------------------
@@ -468,7 +468,7 @@ function Group:Initialize()
 		-- it is laid out and watched, so the option needs no reload.
 		local units = { "player", "party1", "party2", "party3", "party4" }
 		for index, unit in ipairs(units) do
-			Group.partyCompact[index] = Group:CreateCompactFrame("ClassicUF_PartyBox" .. index, unit)
+			Group.partyCompact[index] = Group:CreateCompactFrame("SquawkClassicUF_PartyBox" .. index, unit)
 		end
 	end
 	if CUF.db.raid.enabled then

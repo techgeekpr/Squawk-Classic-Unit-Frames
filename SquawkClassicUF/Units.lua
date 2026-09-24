@@ -1,6 +1,6 @@
 --[[ Player, target, target-of-target, focus and pet frames. ]]
 
-local CUF = ClassicUF
+local CUF = SquawkClassicUF
 local Units = {}
 CUF.Units = Units
 
@@ -256,7 +256,7 @@ end
 
 -- The 232x100 Classic frame: player layout, or mirrored for the target.
 function Units:CreateLargeFrame(key, unit, mirrored, label)
-	local name = "ClassicUF_" .. key
+	local name = "SquawkClassicUF_" .. key
 	local frame = CreateFrame("Button", name, UIParent, "SecureUnitButtonTemplate")
 	frame:SetSize(G.frameWidth, G.frameHeight)
 	frame.unit = unit
@@ -409,7 +409,7 @@ local PET = {
 }
 
 function Units:CreateToTFrame(key, unit, label)
-	local frame = CreateFrame("Button", "ClassicUF_" .. key, UIParent, "SecureUnitButtonTemplate")
+	local frame = CreateFrame("Button", "SquawkClassicUF_" .. key, UIParent, "SecureUnitButtonTemplate")
 	frame:SetSize(TOT.width, TOT.height)
 	frame.unit = unit
 	frame.label = label
@@ -462,7 +462,7 @@ function Units:CreateToTFrame(key, unit, label)
 end
 
 function Units:CreatePetFrame(key, unit, label)
-	local frame = CreateFrame("Button", "ClassicUF_" .. key, UIParent, "SecureUnitButtonTemplate")
+	local frame = CreateFrame("Button", "SquawkClassicUF_" .. key, UIParent, "SecureUnitButtonTemplate")
 	frame:SetSize(PET.width, PET.height)
 	frame.unit = unit
 	frame.label = label

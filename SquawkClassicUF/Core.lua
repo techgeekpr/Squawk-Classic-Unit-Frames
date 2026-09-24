@@ -1,4 +1,4 @@
---[[ Squawk Classic Unit Frames for WoW: Forever
+--[[ Squawk ClassicUF for WoW: Forever
 
 	Forever renders Classic content through the Midnight (12.x) UI, so the unit
 	frames look like retail.  This rebuilds them in the 1.12 style using the
@@ -18,8 +18,8 @@
 
 local ADDON = ...
 
-ClassicUF = {}
-local CUF = ClassicUF
+SquawkClassicUF = {}
+local CUF = SquawkClassicUF
 
 CUF.Version = "1.0.0"
 
@@ -247,26 +247,43 @@ CUF.Defaults = {
 }
 
 function CUF:InitDatabase()
-	local snapshots = ClassicUF_Restore
-	ClassicUF_Restore = nil
+	local snapshots = SquawkClassicUF_Restore
+	SquawkClassicUF_Restore = nil
 
-	local live = (type(ClassicUFDB) == "table") and ClassicUFDB or nil
-	ClassicUFDB = live or {}
-	ClassicUFDB.profiles = ClassicUFDB.profiles or {}
+	local live = (type(SquawkClassicUFDB) == "table") and SquawkClassicUFDB or nil
+	SquawkClassicUFDB = live or {}
+	SquawkClassicUFDB.profiles = SquawkClassicUFDB.profiles or {}
 
 	if not live and type(snapshots) == "table" then
 		for _, snap in ipairs(snapshots) do
 			for key, profile in pairs((type(snap) == "table" and snap.profiles) or {}) do
-				if not ClassicUFDB.profiles[key] then ClassicUFDB.profiles[key] = profile end
+				if not SquawkClassicUFDB.profiles[key] then SquawkClassicUFDB.profiles[key] = profile end
 			end
 		end
 	end
+	-- Carried over from the old ClassicUF name: adopt any profile that has no
+	-- counterpart yet, so renaming the addon costs nothing.
+	local legacy = SquawkClassicUF_Legacy
+	SquawkClassicUF_Legacy = nil
+	if type(legacy) == "table" then
+		local adopted = 0
+		for _, snap in ipairs(legacy) do
+			for key, profile in pairs((type(snap) == "table" and snap.profiles) or {}) do
+				if not SquawkClassicUFDB.profiles[key] then
+					SquawkClassicUFDB.profiles[key] = profile
+					adopted = adopted + 1
+				end
+			end
+		end
+		CUF.AdoptedProfiles = adopted
+	end
+
 	CUF.ClientRestoredSV = live ~= nil
 
 	local key = (UnitName("player") or "?") .. " - " .. (GetRealmName() or "?")
 	CUF.ProfileKey = key
-	ClassicUFDB.profiles[key] = ClassicUFDB.profiles[key] or {}
-	CUF.db = fill(ClassicUFDB.profiles[key], copy(CUF.Defaults))
+	SquawkClassicUFDB.profiles[key] = SquawkClassicUFDB.profiles[key] or {}
+	CUF.db = fill(SquawkClassicUFDB.profiles[key], copy(CUF.Defaults))
 
 	-- The level briefly defaulted to sitting under the name; that value is
 	-- already saved in existing profiles, so move it back to the circle once.
@@ -302,7 +319,7 @@ function CUF:InitDatabase()
 end
 
 function CUF:Print(msg)
-	DEFAULT_CHAT_FRAME:AddMessage("|cffffd100Squawk CUF:|r " .. tostring(msg))
+	DEFAULT_CHAT_FRAME:AddMessage("|cffffd100Squawk ClassicUF:|r " .. tostring(msg))
 end
 
 CUF.RaidTextures = {
@@ -449,7 +466,7 @@ end)
 -- Getting Blizzard's frames out of the way
 -- ---------------------------------------------------------------------------
 
-local hider = CreateFrame("Frame", "ClassicUF_Hidden", UIParent)
+local hider = CreateFrame("Frame", "SquawkClassicUF_Hidden", UIParent)
 hider:Hide()
 CUF.Hider = hider
 
@@ -492,7 +509,7 @@ end
 function CUF:ShowArtCheck()
 	local f = CUF.ArtFrame
 	if not f then
-		f = CreateFrame("Frame", "ClassicUF_ArtCheck", UIParent, "BackdropTemplate")
+		f = CreateFrame("Frame", "SquawkClassicUF_ArtCheck", UIParent, "BackdropTemplate")
 		CUF.ArtFrame = f
 		f:SetSize(560, 350)
 		f:SetPoint("CENTER")
@@ -623,8 +640,8 @@ local function handleSlash(msg)
 		CUF.ActionBars:SkinAll()
 		CUF.ActionBars:Diagnostics()
 	elseif cmd == "reset" then
-		ClassicUFDB.profiles[CUF.ProfileKey] = {}
-		CUF.db = fill(ClassicUFDB.profiles[CUF.ProfileKey], copy(CUF.Defaults))
+		SquawkClassicUFDB.profiles[CUF.ProfileKey] = {}
+		CUF.db = fill(SquawkClassicUFDB.profiles[CUF.ProfileKey], copy(CUF.Defaults))
 		CUF:RunProtected(function() CUF:ApplyAll() end)
 		CUF:Print("settings reset to defaults")
 	elseif cmd == "scale" and tonumber(rest) then
@@ -639,11 +656,11 @@ local function handleSlash(msg)
 	end
 end
 
-SLASH_CLASSICUF1 = "/cuf"
-SLASH_CLASSICUF2 = "/squawk"
-SLASH_CLASSICUF3 = "/scuf"
-SLASH_CLASSICUF4 = "/classicuf"
-SlashCmdList["CLASSICUF"] = handleSlash
+SLASH_SQUAWKCLASSICUF1 = "/cuf"
+SLASH_SQUAWKCLASSICUF2 = "/squawk"
+SLASH_SQUAWKCLASSICUF3 = "/scuf"
+SLASH_SQUAWKCLASSICUF4 = "/classicuf"
+SlashCmdList["SQUAWKCLASSICUF"] = handleSlash
 
 function CUF:SetLocked(locked)
 	for _, frame in pairs(CUF.MovableFrames or {}) do
@@ -671,6 +688,10 @@ boot:SetScript("OnEvent", function()
 
 	CUF:HideBlizzardFrames()
 	CUF:SetLocked(CUF.db.locked)
-	CUF:Print(("loaded. |cffffd100/cuf|r for options, |cffffd100/cuf unlock|r to move frames.%s")
+	if (CUF.AdoptedProfiles or 0) > 0 then
+		CUF:Print(("carried over %d saved profile(s) from the old ClassicUF name.")
+			:format(CUF.AdoptedProfiles))
+	end
+	CUF:Print(("loaded. |cffffd100/squawk|r for options, |cffffd100/squawk unlock|r to move frames.%s")
 		:format(CUF.ClientRestoredSV and "" or " Settings are restored by the SavedVariables shim."))
 end)
