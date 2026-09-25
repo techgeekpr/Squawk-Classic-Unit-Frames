@@ -133,7 +133,9 @@ which operations that client permits.
 /cuf art          check which Classic textures this client actually ships
 /cuf marks        raid target marks: setting, atlas, API, and per-frame state
 /cuf probe        which operations this client permits on a secret value
-/cuf bars         re-apply the action bar skin and report what it found
+/cuf bars         re-apply the action bar skin; reports which regions it found,
+                  where the border texture came from, and whether any modern
+                  decoration is still drawing over it
 /cuf castdiag     cast bar diagnostics: APIs, art, and what each bar is doing
 /cuf casttest     show both cast bars filled for five seconds
 /cuf auradiag     whether this client lets addons read auras, and what it sees

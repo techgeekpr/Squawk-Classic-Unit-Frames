@@ -82,6 +82,26 @@ local function region(button, key)
 	return name and _G[name .. key] or nil
 end
 
+-- The Classic shapes -- button.NormalTexture and _G[name.."NormalTexture"]
+-- -- do not exist on this client.  GetNormalTexture is the accessor that does,
+-- and if the button has no normal texture at all, setting one creates it.
+local function normalTexture(button)
+	local found = region(button, "NormalTexture")
+	if found then return found, "region" end
+
+	if button.GetNormalTexture then
+		local ok, texture = pcall(button.GetNormalTexture, button)
+		if ok and texture then return texture, "GetNormalTexture" end
+	end
+
+	if button.SetNormalTexture and button.GetNormalTexture then
+		pcall(button.SetNormalTexture, button, ART.normal)
+		local ok, texture = pcall(button.GetNormalTexture, button)
+		if ok and texture then return texture, "created" end
+	end
+	return nil, "none"
+end
+
 local function skinFonts(button)
 	local hotkey = region(button, "HotKey")
 	if hotkey then
@@ -123,8 +143,12 @@ function Bars:SkinButton(button)
 	if not button or not button.GetName then return end
 
 	local width = button:GetWidth() or 36
-	local border = region(button, "NormalTexture")
+	local border, source = normalTexture(button)
+	button.cufBorderSource = source
 	if border then
+		-- An atlas set by the modern template overrides SetTexture and brings
+		-- its own coordinates, so clear it before drawing the Classic border.
+		if border.SetAtlas then pcall(border.SetAtlas, border, nil) end
 		border:SetTexture(ART.normal)
 		border:SetTexCoord(unpack(BORDER_COORDS))
 		border:SetSize(width * BORDER_SCALE, width * BORDER_SCALE)
@@ -151,9 +175,17 @@ function Bars:SkinButton(button)
 		end
 	end
 
+	-- Hide() alone is not enough: Blizzard re-shows these from update paths we
+	-- may not have hooked, and a Show() undoes it.  Clearing the texture and
+	-- the alpha as well leaves nothing to draw even if it is shown again.
 	for _, key in ipairs(MODERN_PARTS) do
 		local part = region(button, key)
-		if part and part.Hide then pcall(part.Hide, part) end
+		if part then
+			if part.SetAtlas then pcall(part.SetAtlas, part, nil) end
+			if part.SetTexture then pcall(part.SetTexture, part, nil) end
+			if part.SetAlpha then pcall(part.SetAlpha, part, 0) end
+			if part.Hide then pcall(part.Hide, part) end
+		end
 	end
 
 	skinFonts(button)
@@ -189,9 +221,18 @@ local function hookUpdates()
 		end
 	end
 
-	hookMixin("ActionBarActionButtonMixin", "Update")
-	hookMixin("BaseActionButtonMixin", "Update")
-	hookMixin("ActionButtonMixin", "Update")
+	-- Each is guarded by existence, so listing the ones this client might use
+	-- costs nothing and catches the repaint that washes the skin off.
+	for _, mixin in ipairs({
+		"ActionBarActionButtonMixin", "BaseActionButtonMixin", "ActionButtonMixin",
+	}) do
+		for _, method in ipairs({
+			"Update", "UpdateButtonArt", "UpdateSlotArt", "UpdateVisuals",
+			"UpdateIcon", "UpdateUsable",
+		}) do
+			hookMixin(mixin, method)
+		end
+	end
 
 	for _, name in ipairs({ "ActionButton_Update", "ActionButton_UpdateHotkeys" }) do
 		if type(_G[name]) == "function" then
@@ -246,10 +287,42 @@ function Bars:Diagnostics()
 		(Bars.hooks and #Bars.hooks > 0) and table.concat(Bars.hooks, ", ")
 			or "|cffff0000none - the skin may wash off when buttons change|r"))
 	local sample = Bars.buttons[1]
-	if sample then
-		local border = region(sample, "NormalTexture")
-		CUF:Print(("first button: %s, border %s"):format(
-			sample:GetName() or "?",
-			border and (border:GetTexture() and "set" or "|cffff0000empty|r") or "|cffff0000missing|r"))
+	if not sample then return end
+
+	CUF:Print(("first button: %s  (%.0f wide, skinned=%s)"):format(
+		sample:GetName() or "?", sample:GetWidth() or 0, tostring(sample.cufSkinned)))
+
+	local border, source = normalTexture(sample)
+	CUF:Print(("  normal texture: %s via |cffffd100%s|r"):format(
+		border and "|cff00ff00found|r" or "|cffff0000MISSING|r", tostring(source)))
+	if border then
+		local path = border.GetTexture and select(1, border:GetTexture())
+		local atlas = border.GetAtlas and border:GetAtlas()
+		CUF:Print(("  texture=%s  atlas=%s  shown=%s"):format(
+			tostring(path), tostring(atlas), tostring(border:IsShown())))
 	end
+
+	-- Which of the parts this skin touches actually exist on this client.
+	local parts = {}
+	for _, key in ipairs({ "Icon", "icon", "HotKey", "Count", "Name", "Border",
+		"SlotArt", "SlotBackground", "IconMask" }) do
+		if region(sample, key) then parts[#parts + 1] = key end
+	end
+	CUF:Print(("  regions present: %s"):format(
+		#parts > 0 and table.concat(parts, ", ") or "|cffff0000none|r"))
+
+	-- The decoration that draws over the Classic border if it survives.
+	local loud = {}
+	for _, key in ipairs(MODERN_PARTS) do
+		local part = region(sample, key)
+		if part then
+			local shown = part.IsShown and part:IsShown()
+			local alpha = part.GetAlpha and part:GetAlpha() or 0
+			if shown and alpha > 0 then
+				loud[#loud + 1] = ("%s(a=%.1f)"):format(key, alpha)
+			end
+		end
+	end
+	CUF:Print(("  modern art still drawing: %s"):format(
+		#loud > 0 and ("|cffff0000" .. table.concat(loud, ", ") .. "|r") or "|cff00ff00none|r"))
 end

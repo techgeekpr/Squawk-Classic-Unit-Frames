@@ -153,11 +153,22 @@ local function applySize(frame)
 		frame.IconBorder:SetPoint("BOTTOMRIGHT", frame.Icon, "BOTTOMRIGHT", 0, 0)
 	end
 
-	frame.Text:ClearAllPoints()
-	frame.Text:SetPoint("LEFT", frame, "LEFT", 3, 0)
+	-- The timer is placed first, because the name is bounded by it.
 	frame.Time:ClearAllPoints()
 	frame.Time:SetPoint("RIGHT", frame, "RIGHT", -3, 0)
-	frame.Text:SetWidth(width - 60)
+
+	-- A FontString given an explicit width WRAPS, so a long spell name broke
+	-- onto a second line and overlapped the bar.  Anchoring both sides bounds
+	-- it by the timer's real position rather than a guessed reserve, and with
+	-- wrapping off the name is truncated with an ellipsis instead.
+	frame.Text:ClearAllPoints()
+	frame.Text:SetWidth(0)
+	frame.Text:SetPoint("LEFT", frame, "LEFT", 3, 0)
+	frame.Text:SetPoint("RIGHT", frame.Time, "LEFT", -6, 0)
+	frame.Text:SetJustifyH("LEFT")
+	pcall(frame.Text.SetWordWrap, frame.Text, false)
+	pcall(frame.Text.SetMaxLines, frame.Text, 1)
+	pcall(frame.Text.SetNonSpaceWrap, frame.Text, false)
 
 	local file = frame.Text:GetFont()
 	if file then
