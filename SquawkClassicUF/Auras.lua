@@ -122,6 +122,7 @@ end
 function Auras:PlayerClass()
 	if not Auras.class then
 		local _, class = UnitClass("player")
+	class = CUF.SafeText(class)
 		Auras.class = class
 	end
 	return Auras.class

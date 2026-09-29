@@ -18,6 +18,14 @@ local Art = CUF.Art
 Group.party = {}          -- Classic 128x53 party frames
 Group.partyCompact = {}   -- the same party, drawn as raid-style boxes
 Group.raid = {}
+Group.partyPets = {}        -- partypet1..4 beside the Classic party frames
+Group.partyCompactPets = {} -- pet, partypet1..4 under the raid-style party
+Group.raidPets = {}         -- raidpet1..40
+
+-- Pet boxes are half the height of a member's box, like Blizzard's.
+local function petHeight(settings)
+	return math.max(math.floor(settings.height / 2), 14)
+end
 
 -- Classic PartyMemberFrame geometry
 local PARTY = {
@@ -30,10 +38,14 @@ local PARTY = {
 	nameX = 50, nameY = 43,
 }
 
+-- See Units.lua: a secret class name cannot be used as a table key.
 local function classColor(unit)
-	if not UnitIsPlayer(unit) then return nil end
-	local _, class = UnitClass(unit)
-	return class and CUF.ClassColors[class]
+	if CUF.SafeFlag(UnitIsPlayer(unit)) == false then return nil end
+
+	local _, raw = UnitClass(unit)
+	local class = CUF.SafeText(raw)
+	if not class then return nil end
+	return CUF.ClassColors[class]
 end
 
 -- ---------------------------------------------------------------------------
@@ -90,10 +102,12 @@ local function updateFrame(frame)
 	end
 
 	if frame.StatusText then
-		if UnitIsDeadOrGhost(unit) then
+		-- Secret booleans throw on a truth test, so an unreadable answer must
+		-- fall through to "nothing to say" rather than claim someone is dead.
+		if CUF.SafeFlag(UnitIsDeadOrGhost(unit)) == true then
 			frame.StatusText:SetText("Dead")
 			frame.StatusText:Show()
-		elseif not UnitIsConnected(unit) then
+		elseif CUF.SafeFlag(UnitIsConnected(unit)) == false then
 			frame.StatusText:SetText("Offline")
 			frame.StatusText:Show()
 		else
@@ -269,6 +283,16 @@ function Group:CreateRaidFrame(index)
 	return Group:CreateCompactFrame("SquawkClassicUF_Raid" .. index, "raid" .. index)
 end
 
+-- Classic hung a small pet bar off each party member; this one sits to the
+-- right of the frame so it never collides with the next member below.
+local PARTY_PET = { width = 70, height = 16, x = 2, y = -10 }
+
+function Group:CreatePetFrame(name, unit)
+	local frame = Group:CreateCompactFrame(name, unit)
+	frame.isPet = true
+	return frame
+end
+
 -- ---------------------------------------------------------------------------
 -- layout
 -- ---------------------------------------------------------------------------
@@ -286,6 +310,29 @@ function Group:LayoutParty()
 		frame:SetScale(settings.scale or 1)
 		anchorTo(frame, settings, 0, -(index - 1) * (PARTY.height + settings.spacing))
 	end
+	for index, pet in ipairs(Group.partyPets) do
+		pet:SetScale(settings.scale or 1)
+		pet:SetSize(PARTY_PET.width, PARTY_PET.height)
+		pet.Health:SetSize(PARTY_PET.width - 4, PARTY_PET.height - 4)
+		pet:ClearAllPoints()
+		pet:SetPoint("TOPLEFT", Group.party[index], "TOPRIGHT", PARTY_PET.x, PARTY_PET.y)
+	end
+end
+
+-- Pets that exist right now go first so the block has no holes.  A pet
+-- summoned mid-combat still shows (the unit watch is secure), just in the
+-- slot it was given at the last out-of-combat layout.
+local function petOrder(frames)
+	local present, absent = {}, {}
+	for _, frame in ipairs(frames) do
+		if UnitExists(frame.unit) then
+			present[#present + 1] = frame
+		else
+			absent[#absent + 1] = frame
+		end
+	end
+	for _, frame in ipairs(absent) do present[#present + 1] = frame end
+	return present
 end
 
 -- Raid-style party frames stack under the party anchor using the raid frame
@@ -301,6 +348,20 @@ function Group:LayoutPartyCompact()
 			frame.Health:SetSize(size.width - 4, size.height - 4)
 			anchorTo(frame, settings, 0, -slot * (size.height + size.spacing))
 			slot = slot + 1
+		end
+	end
+
+	-- pets stack under the members
+	local offset = slot * (size.height + size.spacing)
+	local height = petHeight(size)
+	local index = 0
+	for _, frame in ipairs(petOrder(Group.partyCompactPets)) do
+		if frame.unit ~= "pet" or settings.includePlayer then
+			frame:SetScale(settings.scale or 1)
+			frame:SetSize(size.width, height)
+			frame.Health:SetSize(size.width - 4, height - 4)
+			anchorTo(frame, settings, 0, -(offset + index * (height + size.spacing)))
+			index = index + 1
 		end
 	end
 end
@@ -336,6 +397,27 @@ function Group:LayoutRaid()
 		anchorTo(frame, settings,
 			slot.column * (settings.width + settings.spacing),
 			-slot.row * (settings.height + settings.spacing))
+	end
+
+	-- Pets get their own columns to the right of the last occupied one.
+	local firstColumn = 0
+	for index = 1, 40 do
+		if UnitExists("raid" .. index) then
+			local slot = slots[index] or { column = math.floor((index - 1) / settings.perColumn) }
+			firstColumn = math.max(firstColumn, slot.column + 1)
+		end
+	end
+	local height = petHeight(settings)
+	local perColumn = settings.perColumn * 2   -- half-height boxes, same column height
+	for position, frame in ipairs(petOrder(Group.raidPets)) do
+		local column = firstColumn + math.floor((position - 1) / perColumn)
+		local row = (position - 1) % perColumn
+		frame:SetScale(settings.scale or 1)
+		frame:SetSize(settings.width, height)
+		frame.Health:SetSize(settings.width - 4, height - 4)
+		anchorTo(frame, settings,
+			column * (settings.width + settings.spacing),
+			-row * (height + settings.spacing))
 	end
 end
 
@@ -373,13 +455,35 @@ function Group:UpdateVisibility()
 		end
 	end
 
+	local raidVisible = CUF.db.raid.enabled and (inRaid or not CUF.db.raid.showOnlyInRaid)
 	for _, frame in ipairs(Group.raid) do
-		if CUF.db.raid.enabled and (inRaid or not CUF.db.raid.showOnlyInRaid) then
+		if raidVisible then
 			RegisterUnitWatch(frame)
 		else
 			UnregisterUnitWatch(frame)
 			frame:Hide()
 		end
+	end
+
+	local function watch(frame, wanted)
+		if wanted then
+			RegisterUnitWatch(frame)
+		else
+			UnregisterUnitWatch(frame)
+			frame:Hide()
+		end
+	end
+	local partyPets = CUF.db.party.showPetFrames
+	for _, frame in ipairs(Group.partyPets) do
+		watch(frame, classicStyle and partyPets)
+	end
+	for _, frame in ipairs(Group.partyCompactPets) do
+		local wanted = boxStyle and inGroup and partyPets
+		if frame.unit == "pet" then wanted = wanted and CUF.db.party.includePlayer end
+		watch(frame, wanted)
+	end
+	for _, frame in ipairs(Group.raidPets) do
+		watch(frame, raidVisible and CUF.db.raid.showPets)
 	end
 end
 
@@ -465,6 +569,19 @@ function Group:UpdateRange()
 	for _, frame in ipairs(Group.party) do updateRange(frame) end
 	for _, frame in ipairs(Group.partyCompact) do updateRange(frame) end
 	for _, frame in ipairs(Group.raid) do updateRange(frame) end
+	for _, frame in ipairs(Group.partyPets) do updateRange(frame) end
+	for _, frame in ipairs(Group.partyCompactPets) do updateRange(frame) end
+	for _, frame in ipairs(Group.raidPets) do updateRange(frame) end
+end
+
+-- every group frame, members and pets
+function Group:AllFrames()
+	local all = {}
+	for _, list in ipairs({ Group.party, Group.partyCompact, Group.raid,
+		Group.partyPets, Group.partyCompactPets, Group.raidPets }) do
+		for _, frame in ipairs(list) do all[#all + 1] = frame end
+	end
+	return all
 end
 
 function Group:Initialize()
@@ -480,10 +597,20 @@ function Group:Initialize()
 		for index, unit in ipairs(units) do
 			Group.partyCompact[index] = Group:CreateCompactFrame("SquawkClassicUF_PartyBox" .. index, unit)
 		end
+		-- Pets are built whatever the option says, for the same reason.
+		for index = 1, 4 do
+			Group.partyPets[index] = Group:CreatePetFrame("SquawkClassicUF_PartyPet" .. index, "partypet" .. index)
+		end
+		for index, unit in ipairs({ "pet", "partypet1", "partypet2", "partypet3", "partypet4" }) do
+			Group.partyCompactPets[index] = Group:CreatePetFrame("SquawkClassicUF_PartyBoxPet" .. index, unit)
+		end
 	end
 	if CUF.db.raid.enabled then
 		for index = 1, 40 do
 			Group.raid[index] = Group:CreateRaidFrame(index)
+		end
+		for index = 1, 40 do
+			Group.raidPets[index] = Group:CreatePetFrame("SquawkClassicUF_RaidPet" .. index, "raidpet" .. index)
 		end
 	end
 
@@ -510,13 +637,16 @@ function Group:Initialize()
 	local watcher = CreateFrame("Frame")
 	watcher:RegisterEvent("GROUP_ROSTER_UPDATE")
 	watcher:RegisterEvent("PLAYER_ENTERING_WORLD")
+	-- A pet summoned, dismissed or killed: the pet frame's unit now points at
+	-- a different creature, and the pet slots need re-packing.
+	watcher:RegisterEvent("UNIT_PET")
 	watcher:SetScript("OnEvent", function()
+		for _, frame in ipairs(Group:AllFrames()) do updateFrame(frame) end
 		CUF:RunProtected(function()
+			Group:LayoutPartyCompact()
 			Group:LayoutRaid()
 			Group:UpdateVisibility()
-			for _, frame in ipairs(Group.party) do updateFrame(frame) end
-			for _, frame in ipairs(Group.partyCompact) do updateFrame(frame) end
-			for _, frame in ipairs(Group.raid) do updateFrame(frame) end
+			for _, frame in ipairs(Group:AllFrames()) do updateFrame(frame) end
 		end)
 	end)
 end
@@ -539,6 +669,12 @@ function Group:UpdateAll()
 		for _, frame in ipairs(Group.raid) do
 			frame.Health:SetStatusBarTexture(CUF:RaidBarTexture())
 			updateFrame(frame)
+		end
+		for _, list in ipairs({ Group.partyPets, Group.partyCompactPets, Group.raidPets }) do
+			for _, frame in ipairs(list) do
+				frame.Health:SetStatusBarTexture(CUF:RaidBarTexture())
+				updateFrame(frame)
+			end
 		end
 	end)
 end

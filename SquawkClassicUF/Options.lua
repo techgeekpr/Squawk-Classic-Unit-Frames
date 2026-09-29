@@ -293,6 +293,27 @@ function Options:Initialize()
 		function() return db().showLevel end,
 		function(v) db().showLevel = v end)
 	y = y - ROW
+	checkbox(page, c1, y, "Show a combat indicator",
+		function() return db().combatIcon end,
+		function(v) db().combatIcon = v end,
+		"Crossed swords on the player, target and focus frames while that unit is in combat.")
+	y = y - ROW
+	checkbox(page, c1, y, "Show pet happiness",
+		function() return db().petHappiness end,
+		function(v) db().petHappiness = v end,
+		"The hunter pet mood face beside the pet frame. Hover it for the damage "
+		.. "penalty and loyalty. Pets without a mood, such as a warlock's, show nothing.")
+	y = y - WIDE_ROW
+	stepper(page, c1, y, "Pet happiness size",
+		function() return db().petHappinessSize end,
+		function(v) db().petHappinessSize = v end,
+		2, 16, 64, "%d")
+	y = y - ROW
+	checkbox(page, c1, y, "Show a resting indicator",
+		function() return db().showRestIcon end,
+		function(v) db().showRestIcon = v end,
+		"The zzz on your own frame while resting. Combat takes priority over it.")
+	y = y - ROW
 	checkbox(page, c1, y, "Show raid target marks",
 		function() return db().showRaidIcons end,
 		function(v) db().showRaidIcons = v end,
@@ -441,6 +462,11 @@ function Options:Initialize()
 	checkbox(page, c1, y, "Keep party frames while in a raid",
 		function() return db().party.showInRaid end,
 		function(v) db().party.showInRaid = v end)
+	y = y - ROW
+	checkbox(page, c1, y, "Show party pets",
+		function() return db().party.showPetFrames end,
+		function(v) db().party.showPetFrames = v end,
+		"A small bar beside each member's frame, or a half-height box under the raid-style party.")
 	y = y - WIDE_ROW
 	stepper(page, c1, y, "Party scale",
 		function() return db().party.scale end,
@@ -464,6 +490,11 @@ function Options:Initialize()
 	checkbox(page, c2, y, "Arrange by raid group",
 		function() return db().raid.groupByGroup end,
 		function(v) db().raid.groupByGroup = v end)
+	y = y - ROW
+	checkbox(page, c2, y, "Show raid pets",
+		function() return db().raid.showPets end,
+		function(v) db().raid.showPets = v end,
+		"Half-height boxes in their own columns to the right of the raid groups.")
 	y = y - ROW
 	checkbox(page, c2, y, "Fade members out of range",
 		function() return db().raid.rangeCheck end,

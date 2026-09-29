@@ -44,6 +44,8 @@ CUF.Art = {
 	castFill     = "Interface\\CastingBar\\UI-CastingBar-Fill",
 	castBorder   = "Interface\\CastingBar\\UI-CastingBar-Border",
 	raidIcons    = "Interface\\TargetingFrame\\UI-RaidTargetingIcons",
+	stateIcon    = "Interface\\CharacterFrame\\UI-StateIcon",
+	petHappiness = "Interface\\PetPaperDollFrame\\UI-PetHappiness",
 	playerStatus = "Interface\\CharacterFrame\\UI-Player-Status",
 	flat         = "Interface\\Buttons\\WHITE8X8",
 }
@@ -106,6 +108,35 @@ function CUF.SafeNumber(value)
 		return n
 	end)
 	if ok and type(result) == "number" then return result end
+	return nil
+end
+
+-- A "secret" string passes type() and prints, but comparing one throws AND
+-- using one as a table key throws -- "cannot be indexed with secret keys".
+-- tostring does not launder it; string.format does, where the client allows.
+local function usableText(text)
+	if type(text) ~= "string" then return false end
+	return (pcall(function()
+		local _ = (text == "")
+		local _ = text:sub(1, 1)
+		return true
+	end))
+end
+
+function CUF.SafeText(value)
+	if value == nil then return nil end
+	if usableText(value) then return value end
+
+	local ok, text = pcall(function() return ("%s"):format(value) end)
+	if ok and usableText(text) then return text end
+	return nil
+end
+
+-- A secret boolean cannot be laundered at all -- any truth test throws.  This
+-- answers true, false, or nil when the client will not let it be read.
+function CUF.SafeFlag(value)
+	local ok, result = pcall(function() return value and true or false end)
+	if ok then return result end
 	return nil
 end
 
@@ -186,6 +217,9 @@ CUF.Defaults = {
 	showLevel = true,
 	showPortraits = true,
 	showRestIcon = true,
+	combatIcon = true,            -- crossed swords while in combat
+	petHappiness = true,          -- hunter pet mood, beside the pet frame
+	petHappinessSize = 30,        -- 20 was too small to read the face
 	showRaidIcons = true,           -- the star, circle, moon and so on
 	raidIconScale = 1.0,
 	barTexture = "classic",        -- classic | flat
@@ -201,7 +235,8 @@ CUF.Defaults = {
 
 	party = {
 		enabled = true, scale = 1.0, x = 20, y = -220, point = "TOPLEFT",
-		spacing = 12, showPets = false, showInRaid = false,
+		spacing = 12, showInRaid = false,
+		showPetFrames = true,   -- replaces showPets, which nothing ever read
 		useRaidStyle = false,   -- draw the party as raid-style boxes
 		includePlayer = false,  -- and put yourself in with them
 	},
@@ -210,6 +245,7 @@ CUF.Defaults = {
 		enabled = true, scale = 1.0, x = 20, y = -300, point = "TOPLEFT",
 		width = 76, height = 36, spacing = 3, perColumn = 5, columns = 8,
 		groupByGroup = true, showOnlyInRaid = true, showNames = true,
+		showPets = true,            -- pets in their own columns after the groups
 		texture = "classic",
 		rangeCheck = true,          -- fade whoever is out of range
 		rangeAlpha = 0.45,
@@ -588,6 +624,142 @@ function CUF:ProbeMarks()
 	methodsOf(UIParent, "frame")
 end
 
+-- Pet happiness was removed from retail in Cataclysm.  This client runs
+-- Classic content on the Midnight API, so the mechanic may exist in the game
+-- while the function that reports it does not.  Ask, rather than assume.
+function CUF:PetDiagnostics()
+	CUF:Print("---- pet ----")
+	CUF:Print(("setting: %s"):format(
+		CUF.db.petHappiness and "|cff00ff00on|r" or "|cffff0000off|r"))
+
+	local _, class = UnitClass("player")
+	class = CUF.SafeText(class)
+	CUF:Print(("you are a %s; pet exists: %s; family: %s"):format(
+		tostring(class),
+		UnitExists("pet") and "|cff00ff00yes|r" or "|cffff0000no - summon one first|r",
+		(type(UnitCreatureFamily) == "function" and tostring(UnitCreatureFamily("pet"))) or "?"))
+
+	CUF:Print(("GetPetHappiness: |cffffd100%s|r"):format(type(GetPetHappiness)))
+	if type(GetPetHappiness) == "function" then
+		local ok, happiness, damage, loyalty = pcall(GetPetHappiness)
+		if ok then
+			CUF:Print(("  returns: %s, %s, %s   (safe: %s)"):format(
+				tostring(happiness), tostring(damage), tostring(loyalty),
+				tostring(CUF.SafeNumber(happiness))))
+		else
+			CUF:Print("  |cffff0000threw when called|r")
+		end
+	else
+		-- If it is gone, say what else might carry the same information.
+		CUF:Print("  |cffff0000this client has no happiness API|r")
+		for _, name in ipairs({ "PetFrameHappiness", "PetFrame", "PetPaperDollPetInfo" }) do
+			CUF:Print(("  %s: %s"):format(name, _G[name] and "|cff00ff00exists|r" or "absent"))
+		end
+		local found = {}
+		for key in pairs(_G) do
+			if type(key) == "string" and key:lower():find("happiness") then
+				found[#found + 1] = key
+			end
+		end
+		table.sort(found)
+		CUF:Print(("  globals mentioning happiness: %s"):format(
+			#found > 0 and table.concat(found, ", ") or "|cffff0000none|r"))
+
+		-- PetFrameHappiness exists but is not a plain texture, so find out what
+		-- it actually is and what on it carries the mood.
+		local object = _G.PetFrameHappiness
+		if not object then
+			CUF:Print("  |cffff0000PetFrameHappiness is gone|r")
+		else
+			local kind = (type(object.GetObjectType) == "function")
+				and select(2, pcall(object.GetObjectType, object)) or type(object)
+			CUF:Print(("  PetFrameHappiness is a |cffffd100%s|r"):format(tostring(kind)))
+
+			-- Fields it carries in its own right.
+			local fields = {}
+			for key, value in pairs(object) do
+				if type(key) == "string" then
+					fields[#fields + 1] = ("%s(%s)"):format(key, type(value))
+				end
+			end
+			table.sort(fields)
+			CUF:Print(("  its own fields: %s"):format(
+				#fields > 0 and table.concat(fields, ", ") or "none"))
+
+			-- The one that matters.
+			if type(object.GetHappinessStats) == "function" then
+				local got, happiness, damage, loyalty = pcall(object.GetHappinessStats, object)
+				if got then
+					CUF:Print(("  |cff00ff00GetHappinessStats|r -> %s, %s, %s  (safe: %s)"):format(
+						tostring(happiness), tostring(damage), tostring(loyalty),
+						tostring(CUF.SafeNumber(happiness))))
+					-- What the level WOULD compute to under Classic's layout, against
+					-- what the game is actually drawing.  If these disagree, the
+					-- atlas is laid out differently here.
+					local level = CUF.SafeNumber(happiness)
+					if level then
+						CUF:Print(("    classic layout would use left %.4f"):format((level - 1) * 0.1875))
+					end
+					local tex = object.Texture
+					if tex and type(tex.GetTexCoord) == "function" then
+						if type(object.UpdateHappiness) == "function" then
+							pcall(object.UpdateHappiness, object)
+						end
+						local read, left = pcall(tex.GetTexCoord, tex)
+						CUF:Print(("    the game is drawing left %s"):format(
+							read and tostring(left) or "|cffff0000unreadable|r"))
+						CUF:Print(("    its texture: %s   atlas: %s"):format(
+							tostring(tex.GetTexture and tex:GetTexture()),
+							tostring(tex.GetAtlas and tex:GetAtlas())))
+					end
+				else
+					CUF:Print("  |cffff0000GetHappinessStats threw|r")
+				end
+			end
+
+			-- Any texture inside it, and what that texture is showing.
+			if type(object.GetRegions) == "function" then
+				local read, regions = pcall(function() return { object:GetRegions() } end)
+				if read then
+					for index, region in ipairs(regions) do
+						if type(region.GetTexCoord) == "function" then
+							local got, left = pcall(region.GetTexCoord, region)
+							local edge = got and CUF.SafeNumber(left) or nil
+							CUF:Print(("    region %d: texture=%s left=%s -> level %s"):format(
+								index,
+								tostring(region.GetTexture and region:GetTexture()),
+								tostring(left),
+								edge and tostring(math.floor(edge / 0.1875 + 0.5) + 1) or "?"))
+						end
+					end
+				end
+			end
+		end
+
+		-- The mixin the frame is built from may expose a getter of its own.
+		local mixin = _G.PetHappinessIndicatorMixin
+		if type(mixin) == "table" then
+			local methods = {}
+			for key in pairs(mixin) do methods[#methods + 1] = tostring(key) end
+			table.sort(methods)
+			CUF:Print(("  PetHappinessIndicatorMixin: %s"):format(table.concat(methods, ", ")))
+		end
+	end
+
+	CUF:Print(("texture %s: %s"):format(CUF.Art.petHappiness,
+		CUF:TextureExists(CUF.Art.petHappiness) and "|cff00ff00present|r" or "|cffff0000MISSING|r"))
+
+	local frame = CUF.Units and CUF.Units.frames and CUF.Units.frames.pet
+	if frame then
+		CUF:Print(("pet frame: shown=%s  icon=%s  iconShown=%s"):format(
+			tostring(frame:IsShown()),
+			frame.Happiness and "created" or "|cffff0000missing|r",
+			frame.Happiness and tostring(frame.Happiness:IsShown()) or "-"))
+	else
+		CUF:Print("|cffff0000no pet frame|r")
+	end
+end
+
 function CUF:MarkDiagnostics()
 	CUF:Print("---- raid target marks ----")
 	CUF:Print(("setting: %s   scale: %s"):format(
@@ -787,7 +959,7 @@ function CUF:ShowArtCheck()
 		title:SetText("Classic art check - anything blank or green is missing from this client")
 
 		local y = -40
-		for _, name in ipairs({ "frame", "statusBar", "partyFrame", "totFrame", "smallFrame", "castFill", "castBorder", "raidIcons" }) do
+		for _, name in ipairs({ "frame", "statusBar", "partyFrame", "totFrame", "smallFrame", "castFill", "castBorder", "raidIcons", "stateIcon", "petHappiness" }) do
 			local label = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 			label:SetPoint("TOPLEFT", f, "TOPLEFT", 16, y - 14)
 			label:SetText(name .. ":")
@@ -889,6 +1061,8 @@ local function handleSlash(msg)
 		CUF:ShowArtCheck()
 	elseif cmd == "marks" or cmd == "mark" then
 		CUF:MarkDiagnostics()
+	elseif cmd == "pet" then
+		CUF:PetDiagnostics()
 	elseif cmd == "probe" then
 		CUF:ProbeMarks()
 	elseif cmd == "castdiag" or cmd == "cast" then
@@ -913,7 +1087,7 @@ local function handleSlash(msg)
 		CUF:RunProtected(function() CUF:ApplyAll() end)
 		CUF:Print("scale set to " .. scale)
 	else
-		CUF:Print("/cuf | unlock | lock | scale <0.5-2> | art | marks | probe | bars | castdiag | casttest | auradiag | reset")
+		CUF:Print("/cuf | unlock | lock | scale <0.5-2> | art | marks | pet | probe | bars | castdiag | casttest | auradiag | reset")
 	end
 end
 

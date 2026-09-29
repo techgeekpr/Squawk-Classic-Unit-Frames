@@ -24,10 +24,16 @@ local CLASSIFICATION_ART = {
 	rare      = "rare",
 }
 
+-- The class name arrives as a secret string, and using one as a table key
+-- throws just as comparing one does.  It has to be laundered before it can
+-- look anything up.
 local function unitClassColor(unit)
-	if not UnitIsPlayer(unit) then return nil end
-	local _, class = UnitClass(unit)
-	return class and CUF.ClassColors[class]
+	if CUF.SafeFlag(UnitIsPlayer(unit)) == false then return nil end
+
+	local _, raw = UnitClass(unit)
+	local class = CUF.SafeText(raw)
+	if not class then return nil end
+	return CUF.ClassColors[class]
 end
 
 local function applyHealthColor(frame)
@@ -35,7 +41,8 @@ local function applyHealthColor(frame)
 	local color = CUF.db.classColorHealth and unitClassColor(unit)
 	if color then
 		frame.Health:SetStatusBarColor(color[1], color[2], color[3])
-	elseif UnitIsPlayer(unit) or UnitPlayerControlled(unit) then
+	elseif CUF.SafeFlag(UnitIsPlayer(unit)) ~= false
+		or CUF.SafeFlag(UnitPlayerControlled(unit)) ~= false then
 		frame.Health:SetStatusBarColor(0.1, 0.8, 0.1)
 	else
 		-- Reaction colouring is a plain lookup, no secret values involved.
@@ -109,7 +116,9 @@ end
 
 local function updateClassification(frame)
 	if not frame.mirrored or not frame.Art then return end
-	local key = CLASSIFICATION_ART[UnitClassification(frame.unit) or ""]
+	-- Same trap: the classification is a string from the client, so it cannot
+	-- index the table until it has been laundered.
+	local key = CLASSIFICATION_ART[CUF.SafeText(UnitClassification(frame.unit)) or ""]
 	frame.Art:SetTexture(key and Art[key] or Art.frame)
 	local coords = CUF.Geometry.targetArtCoords
 	frame.Art:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
@@ -124,10 +133,12 @@ local function updatePvP(frame)
 		return
 	end
 
-	if UnitIsPVPFreeForAll(unit) then
+	-- Both of these can be secret booleans; unreadable means no banner rather
+	-- than an error.
+	if CUF.SafeFlag(UnitIsPVPFreeForAll(unit)) == true then
 		icon:SetTexture(Art.pvpFFA)
 		icon:Show()
-	elseif UnitIsPVP(unit) then
+	elseif CUF.SafeFlag(UnitIsPVP(unit)) == true then
 		local faction = UnitFactionGroup(unit)
 		if faction == "Alliance" then
 			icon:SetTexture(Art.pvpAlliance)
@@ -143,6 +154,206 @@ local function updatePvP(frame)
 	end
 end
 
+-- UnitAffectingCombat can hand back a secret boolean on this client, and
+-- testing one throws outright.  Read it when the client allows; otherwise let
+-- the widget consume the secret without the addon ever learning the answer.
+local function showFromFlag(texture, value)
+	local readable, result = pcall(function() return value and true or false end)
+	if readable then
+		texture:SetAlpha(1)
+		texture:SetShown(result and true or false)
+		return
+	end
+
+	if texture.SetAlphaFromBoolean then
+		texture:Show()
+		if pcall(texture.SetAlphaFromBoolean, texture, value, 1, 0) then return end
+	end
+	texture:Hide()
+end
+
+-- Classic packs both states into one file: crossed swords on the right half,
+-- the resting zzz on the left.
+local COMBAT_COORDS = { 0.5, 1.0, 0.0, 0.484375 }
+local REST_COORDS = { 0.0, 0.5, 0.0, 0.421875 }
+
+local function updateState(frame)
+	local icon = frame.StateIcon
+	if not icon then return end
+
+	local unit = frame.unit
+	if not unit or not UnitExists(unit) then
+		icon:Hide()
+		return
+	end
+
+	-- Combat wins over resting: you cannot be both, and combat is the one you
+	-- need to see at a glance.
+	if CUF.db.combatIcon then
+		local ok, inCombat = pcall(UnitAffectingCombat, unit)
+		if ok then
+			icon:SetTexCoord(COMBAT_COORDS[1], COMBAT_COORDS[2], COMBAT_COORDS[3], COMBAT_COORDS[4])
+			showFromFlag(icon, inCombat)
+			if icon:IsShown() and (icon:GetAlpha() or 0) > 0 then return end
+		end
+	end
+
+	-- Resting is the player's own business; no other unit reports it.
+	if unit == "player" and CUF.db.showRestIcon and type(IsResting) == "function" then
+		local ok, resting = pcall(IsResting)
+		if ok then
+			icon:SetTexCoord(REST_COORDS[1], REST_COORDS[2], REST_COORDS[3], REST_COORDS[4])
+			showFromFlag(icon, resting)
+			return
+		end
+	end
+
+	icon:Hide()
+end
+
+-- Hunter pet mood.  GetPetHappiness returns 1 unhappy, 2 content, 3 happy,
+-- plus the damage penalty and the loyalty rate.  It answers nil for a warlock
+-- pet or any pet without a mood, which is not an error -- there is simply
+-- nothing to draw.
+--
+-- The three faces sit side by side in one file, each 0.1875 wide, so the
+-- slice runs from (happiness - 1) to happiness.
+local HAPPINESS_LABEL = { "Unhappy", "Content", "Happy" }
+local HAPPINESS_COLOR = { { 1, 0.3, 0.3 }, { 1, 0.82, 0 }, { 0.3, 1, 0.3 } }
+
+-- GetPetHappiness is gone from this client -- it went with Cataclysm -- but
+-- the mood did not.  It moved onto the pet frame's happiness indicator:
+-- PetFrameHappiness:GetHappinessStats(), from PetHappinessIndicatorMixin.
+-- That is a real query, not a reading of what happens to be on screen, so it
+-- is correct even when Blizzard's own frame is hidden.
+local function moodFromIndicator()
+	local frame = _G.PetFrameHappiness
+	if not frame or type(frame.GetHappinessStats) ~= "function" then return nil end
+
+	local ok, happiness, damage, loyalty = pcall(frame.GetHappinessStats, frame)
+	if not ok then return nil end
+
+	local level = CUF.SafeNumber(happiness)
+	if not level or level < 1 or level > 3 then return nil end
+	return level, CUF.SafeNumber(damage), CUF.SafeNumber(loyalty)
+end
+
+-- Last resort: read the face the game is already drawing.  The three are
+-- 0.1875 wide, so the left edge gives the level back.  This only reflects
+-- what has been drawn, so it is behind the other two rather than beside them.
+local function moodFromDisplay()
+	local frame = _G.PetFrameHappiness
+	local texture = frame and frame.Texture
+	if not texture or type(texture.GetTexCoord) ~= "function" then return nil end
+
+	local ok, left = pcall(texture.GetTexCoord, texture)
+	if not ok then return nil end
+
+	local edge = CUF.SafeNumber(left)
+	if not edge then return nil end
+
+	local level = math.floor(edge / 0.1875 + 0.5) + 1
+	if level < 1 or level > 3 then return nil end
+	return level
+end
+
+local function petMood()
+	-- The original API first, for any client that still has it.
+	if type(GetPetHappiness) == "function" then
+		local ok, happiness, damage, loyalty = pcall(GetPetHappiness)
+		if ok then
+			local level = CUF.SafeNumber(happiness)
+			if level and level >= 1 and level <= 3 then
+				return level, CUF.SafeNumber(damage), CUF.SafeNumber(loyalty)
+			end
+		end
+	end
+
+	local level, damage, loyalty = moodFromIndicator()
+	if level then return level, damage, loyalty end
+
+	return moodFromDisplay()
+end
+
+local function updateHappiness(frame)
+	local icon = frame.Happiness
+	if not icon then return end
+
+	if not CUF.db.petHappiness or not UnitExists(frame.unit) then
+		icon:Hide()
+		return
+	end
+
+	local level, damage, loyalty = petMood()
+	if not level then
+		icon:Hide()
+		return
+	end
+
+	-- Mirror what the game is drawing, whole.  Copying only the texture
+	-- coordinates was not enough: this client does not slice a three-face
+	-- atlas the way Classic did, so its coordinates span the entire file and
+	-- copying them showed all three faces at once.  The face is chosen by the
+	-- texture (or atlas) itself, so that has to come across too.
+	local copied = false
+	local source = _G.PetFrameHappiness
+	local sourceTexture = source and source.Texture
+
+	if sourceTexture then
+		-- SetTexture does NOT clear the texture coordinates, so a slice left
+		-- over from a previous attempt would crop whatever is set next -- which
+		-- showed as an icon with the face cut away entirely.  Reset first.
+		pcall(icon.Texture.SetTexCoord, icon.Texture, 0, 1, 0, 1)
+
+		-- Refresh first: a hidden frame's texture can be stale, and a stale
+		-- face is worse than a computed one.
+		if type(source.UpdateHappiness) == "function" then
+			pcall(source.UpdateHappiness, source)
+		end
+
+		-- An atlas carries its own coordinates, so it is all-or-nothing.
+		local atlas = (type(sourceTexture.GetAtlas) == "function")
+			and select(2, pcall(sourceTexture.GetAtlas, sourceTexture)) or nil
+		if atlas then
+			copied = pcall(icon.Texture.SetAtlas, icon.Texture, atlas)
+		end
+
+		if not copied and type(sourceTexture.GetTexture) == "function" then
+			local got, file = pcall(sourceTexture.GetTexture, sourceTexture)
+			if got and file then
+				copied = pcall(icon.Texture.SetTexture, icon.Texture, file)
+				if copied and type(sourceTexture.GetTexCoord) == "function" then
+					local ok, ulx, uly, llx, lly, urx, ury, lrx, lry =
+						pcall(sourceTexture.GetTexCoord, sourceTexture)
+					-- Only worth copying if it describes an actual area; a
+					-- degenerate slice would hide the face rather than crop it.
+					local wide = ok and ulx and urx and math.abs(urx - ulx) > 0.01
+					local tall = ok and uly and lly and math.abs(lly - uly) > 0.01
+					if wide and tall then
+						pcall(icon.Texture.SetTexCoord, icon.Texture,
+							ulx, uly, llx, lly, urx, ury, lrx, lry)
+					end
+				end
+			end
+		end
+	end
+
+	-- Nothing to mirror: fall back to Classic's own layout of the file.
+	if not copied then
+		if CUF:TextureExists(Art.petHappiness) then
+			icon.Texture:SetTexture(Art.petHappiness)
+		end
+		pcall(icon.Texture.SetTexCoord, icon.Texture, 0, 1, 0, 1)
+		icon.Texture:SetTexCoord((level - 1) * 0.1875, level * 0.1875, 0, 0.359375)
+	end
+
+	local size = CUF.db.petHappinessSize or 30
+	icon:SetSize(size, size)
+
+	icon.level, icon.damage, icon.loyalty = level, damage, loyalty
+	icon:Show()
+end
+
 local updateAuras   -- defined with the target aura row, below
 
 local function updateAll(frame)
@@ -153,6 +364,8 @@ local function updateAll(frame)
 	updatePortrait(frame)
 	updateClassification(frame)
 	updatePvP(frame)
+	updateState(frame)
+	updateHappiness(frame)
 	CUF:UpdateRaidTargetIcon(frame)
 	updateAuras(frame)
 end
@@ -330,6 +543,20 @@ function Units:CreateLargeFrame(key, unit, mirrored, label)
 		frame.PvPIcon:SetPoint("TOPLEFT", frame, "TOPLEFT", G.pvpIconX, G.pvpIconY)
 	end
 	frame.PvPIcon:Hide()
+
+	-- Combat / resting, in the corner Classic uses: top-left on the player,
+	-- mirrored to the top-right on the target and focus.
+	frame.StateIcon = frame.ArtFrame:CreateTexture(nil, "OVERLAY")
+	frame.StateIcon:SetDrawLayer("OVERLAY", 6)
+	frame.StateIcon:SetSize(20, 20)
+	frame.StateIcon:SetTexture(CUF:TextureExists(Art.stateIcon)
+		and Art.stateIcon or "Interface\\Icons\\Ability_DualWield")
+	if mirrored then
+		frame.StateIcon:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -12, -6)
+	else
+		frame.StateIcon:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -6)
+	end
+	frame.StateIcon:Hide()
 
 	-- The raid marker sits on the top edge of the portrait.  Anchoring it to
 	-- the portrait rather than the frame means it follows the mirroring.
@@ -510,6 +737,40 @@ function Units:CreatePetFrame(key, unit, label)
 	frame.Dead:SetText("Dead")
 	frame.Dead:SetTextColor(1, 0.2, 0.2)
 	frame.Dead:Hide()
+
+	-- Mood sits to the right of the frame, clear of the art, the way the
+	-- Classic pet frame places it.  A Button rather than a Texture so it can
+	-- carry the tooltip that explains the damage penalty.
+	frame.Happiness = CreateFrame("Button", nil, frame.ArtFrame)
+	frame.Happiness:SetSize(CUF.db.petHappinessSize or 30, CUF.db.petHappinessSize or 30)
+	frame.Happiness:SetPoint("LEFT", frame, "RIGHT", 0, -4)
+	frame.Happiness:SetFrameLevel(frame.ArtFrame:GetFrameLevel() + 2)
+
+	frame.Happiness.Texture = frame.Happiness:CreateTexture(nil, "OVERLAY")
+	frame.Happiness.Texture:SetAllPoints(frame.Happiness)
+	if CUF:TextureExists(Art.petHappiness) then
+		frame.Happiness.Texture:SetTexture(Art.petHappiness)
+	end
+
+	frame.Happiness:SetScript("OnEnter", function(self)
+		if not self.level then return end
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		local colour = HAPPINESS_COLOR[self.level] or { 1, 1, 1 }
+		-- PET_HAPPINESS1..3 are the game's own strings, so this follows the
+		-- client's language rather than hardcoding English.
+		local text = _G["PET_HAPPINESS" .. self.level]
+		if type(text) ~= "string" then text = HAPPINESS_LABEL[self.level] or "?" end
+		GameTooltip:AddLine(text, colour[1], colour[2], colour[3], 1)
+		if self.damage then
+			GameTooltip:AddLine(("Damage: %d%% of normal"):format(self.damage), 1, 1, 1, 1)
+		end
+		if self.loyalty and self.loyalty ~= 0 then
+			GameTooltip:AddLine(("Loyalty: %+d"):format(self.loyalty), 1, 1, 1, 1)
+		end
+		GameTooltip:Show()
+	end)
+	frame.Happiness:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	frame.Happiness:Hide()
 
 	frame.UpdateAll = updateAll
 	CUF:CreateRaidTargetIcon(frame, frame.ArtFrame, 14)
@@ -706,17 +967,34 @@ local function registerUnitEvents(frame)
 			updateAuras(self)
 		elseif event == "RAID_TARGET_UPDATE" then
 			CUF:UpdateRaidTargetIcon(self)
+		elseif event == "UNIT_HAPPINESS" or event == "PET_UI_UPDATE" then
+			updateHappiness(self)
+		elseif event == "UNIT_FLAGS" or event == "PLAYER_REGEN_DISABLED"
+			or event == "PLAYER_REGEN_ENABLED" or event == "PLAYER_UPDATE_RESTING" then
+			updateState(self)
 		end
 	end)
 
 	frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 	-- Not a unit event: marking anyone fires it for every frame.
 	frame:RegisterEvent("RAID_TARGET_UPDATE")
+
+	-- Entering and leaving combat are not unit events, and resting is the
+	-- player's alone.
+	frame:RegisterEvent("PLAYER_REGEN_DISABLED")
+	frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+	if unit == "player" then
+		pcall(frame.RegisterEvent, frame, "PLAYER_UPDATE_RESTING")
+	end
+	if unit == "pet" then
+		pcall(frame.RegisterEvent, frame, "UNIT_HAPPINESS")
+		pcall(frame.RegisterEvent, frame, "PET_UI_UPDATE")
+	end
 	for _, event in ipairs({
 		"UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_POWER_UPDATE", "UNIT_MAXPOWER",
 		"UNIT_DISPLAYPOWER", "UNIT_NAME_UPDATE", "UNIT_LEVEL", "UNIT_FACTION",
 		"UNIT_PORTRAIT_UPDATE", "UNIT_MODEL_CHANGED", "UNIT_CLASSIFICATION_CHANGED",
-		"UNIT_AURA",
+		"UNIT_AURA", "UNIT_FLAGS",
 	}) do
 		pcall(frame.RegisterUnitEvent, frame, event, unit)
 	end
