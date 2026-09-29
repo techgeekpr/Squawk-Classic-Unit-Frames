@@ -21,7 +21,7 @@ local ADDON = ...
 SquawkClassicUF = {}
 local CUF = SquawkClassicUF
 
-CUF.Version = "1.2.0"
+CUF.Version = "1.3.0"
 
 -- ---------------------------------------------------------------------------
 -- Classic art, paths and geometry straight from Blizzard's Classic FrameXML
@@ -317,14 +317,18 @@ CUF.Defaults = {
 	},
 
 	actionBars = {
-		enabled = true,
+		enabled = true,             -- classic buttons and the stone bar strip
 		showHotkeys = true,
 		showMacroNames = true,
+		gryphons = true,            -- vanilla's stone gryphons at the bar's ends
+		bags = true,                -- square bag slots on the bar strip
+		microMenu = true,           -- the classic micro buttons on the strip
+		xpBar = true,               -- vanilla's segmented XP and reputation bars
 	},
 
 	castbar = {
 		enabled = true, scale = 1.0,
-		style = "quartz",           -- quartz | classic
+		style = "squawk",           -- squawk (Squawk Castbar) | classic
 		width = 200, height = 18,
 
 		-- The classic style keeps its own sizes: its art is drawn for 195x13
@@ -409,7 +413,7 @@ function CUF:InitDatabase()
 		auras.buffGap, auras.debuffGap = gap, gap
 		auras.anchor, auras.offsetX, auras.offsetY = nil, nil, nil
 	end
-	-- Cast bars were Classic-sized before the Quartz style arrived; resize
+	-- Cast bars were Classic-sized before the slim style arrived; resize
 	-- existing profiles once so the new look is not squeezed into old numbers.
 	if not CUF.db.castbarStyleMigrated then
 		CUF.db.castbarStyleMigrated = true
@@ -444,6 +448,8 @@ function CUF:InitDatabase()
 		CUF.db.castbar.targetPlacement = "blizzard"
 		CUF.db.levelNudgeX, CUF.db.levelNudgeY = 0, 0
 	end
+
+	if CUF.db.castbar.style ~= "classic" then CUF.db.castbar.style = "squawk" end
 
 	if CUF.db.castbar.targetOffsetY then
 		CUF.db.castbar.targetGap = math.abs(CUF.db.castbar.targetOffsetY)
@@ -955,6 +961,56 @@ function CUF:AddGuildLine(unit)
 end
 
 -- ---------------------------------------------------------------------------
+-- Hooking Blizzard's methods.  A missing method is skipped, so a renamed one
+-- costs a feature rather than the addon, and each hook runs protected: hooks
+-- on one function form a chain, and an error in one would silently skip the
+-- rest.  Errors still reach the error handler.
+--   CUF.Hook("GlobalFunction", fn)      CUF.Hook(object, "Method", fn)
+-- ---------------------------------------------------------------------------
+
+local function protect(fn)
+	return function(...) xpcall(fn, geterrorhandler(), ...) end
+end
+
+function CUF.Hook(target, method, fn)
+	if type(method) == "function" then
+		if type(target) == "string" and type(_G[target]) == "function" then
+			hooksecurefunc(target, protect(method))
+			return true
+		end
+		return false
+	end
+	if type(target) == "table" and type(target[method]) == "function" then
+		hooksecurefunc(target, method, protect(fn))
+		return true
+	end
+	return false
+end
+
+-- A file texture with optional coordinates (full texture otherwise).
+function CUF.SetFile(texture, path, left, right, top, bottom)
+	if not texture then return end
+	texture:SetTexture(path)
+	if left then
+		texture:SetTexCoord(left, right, top, bottom)
+	else
+		texture:SetTexCoord(0, 1, 0, 1)
+	end
+end
+
+-- Takes a mask off the textures it clips, and hides it.
+function CUF.StripMask(mask, ...)
+	if not mask then return end
+	for i = 1, select("#", ...) do
+		local texture = select(i, ...)
+		if texture and texture.RemoveMaskTexture then
+			pcall(texture.RemoveMaskTexture, texture, mask)
+		end
+	end
+	if mask.Hide then mask:Hide() end
+end
+
+-- ---------------------------------------------------------------------------
 -- Combat-safe work queue.  Protected frames refuse to move, show or hide while
 -- the player is in combat, so anything layout related queues here.
 -- ---------------------------------------------------------------------------
@@ -1149,6 +1205,7 @@ function CUF:ApplyAll()
 	CUF.Group:UpdateAll()
 	CUF.Cast:ApplySettings()
 	CUF.ActionBars:ApplySettings()
+	if CUF.XPBar then CUF.XPBar:ApplySettings() end
 end
 
 local function handleSlash(msg)
@@ -1223,7 +1280,7 @@ boot:SetScript("OnEvent", function()
 		return
 	end
 
-	for _, module in ipairs({ "Units", "Group", "Cast", "ActionBars", "Options" }) do
+	for _, module in ipairs({ "Units", "Group", "Cast", "ActionBars", "BagsBar", "MicroMenu", "XPBar", "Options" }) do
 		local ok, err = pcall(function() CUF[module]:Initialize() end)
 		if not ok then CUF:Print(("|cffff0000%s failed:|r %s"):format(module, tostring(err))) end
 	end

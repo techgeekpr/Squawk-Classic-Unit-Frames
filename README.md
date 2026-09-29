@@ -29,10 +29,12 @@ target-of-target and pet frames use their real Classic art.
 - **Raid target marks** — the star, circle, diamond, triangle, moon, square,
   cross and skull, on every frame: player, target, target of target, focus,
   pet, party and raid. Sized independently of the frames.
-- **Cast bars** — Quartz style by default: slim bar, one pixel border, icon
-  outside on the left, spell name and countdown inside, a latency zone shaded
-  at the end, and a red flash on interrupt. The Classic cast bar art is
-  available as an alternative style.
+- **Cast bars** — two styles to pick from. Squawk Castbar: a slim bar, one
+  pixel border, icon outside on the left, spell name and countdown inside, a
+  latency zone shaded at the end, and a red flash on interrupt. Classic:
+  vanilla's cast bar with its border, spark, completion flash and fade. The
+  target and focus bars sit where Blizzard puts them, under the frame or its
+  buffs and debuffs.
 - **Target auras** — the target's buffs and debuffs below (or above) the
   frame, independently placed, with dispel-type colouring, stack counts and
   the game's own tooltips on hover.
@@ -153,9 +155,12 @@ looks wrong, they will usually say why in one line.
 | `Units.lua` | player, target, target of target, focus and pet frames, target auras |
 | `Group.lua` | party and raid frames, layout, movers, range fading |
 | `Auras.lua` | guarded aura reading, missing buffs and dispels per class |
-| `Cast.lua` | cast bars, Quartz and Classic styles |
-| `ActionBars.lua` | Classic skin over Blizzard's action buttons |
-| `Options.lua` | five-tab options panel |
+| `Cast.lua` | cast bars, Squawk Castbar and Classic styles |
+| `ActionBars.lua` | vanilla buttons, bar strip, page arrows and gryphons on Blizzard's action bars |
+| `BagsBar.lua` | vanilla bag slots and key ring on the bags bar |
+| `MicroMenu.lua` | classic micro buttons on the stone panel |
+| `XPBar.lua` | vanilla XP and reputation bars |
+| `Options.lua` | options panel: sidebar categories, one row per setting |
 
 ## Credits
 
@@ -164,5 +169,4 @@ Written by Avoid Me of &lt;Squawk&gt;.
 
 Geometry and art paths come from Blizzard's Classic `FrameXML`, read from the
 [wow-ui-source](https://github.com/Gethe/wow-ui-source) mirror, which carries a
-`forever` branch matching this client. The cast bar layout follows the look of
-[Quartz](https://www.curseforge.com/wow/addons/quartz).
+`forever` branch matching this client.

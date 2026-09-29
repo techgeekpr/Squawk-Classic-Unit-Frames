@@ -1,6 +1,6 @@
 --[[ Cast bars, in two styles.
 
-	Quartz: a slim bar with a one pixel black border, the spell icon sitting
+	Squawk Castbar: a slim bar with a one pixel black border, the spell icon sitting
 	just outside on the left, the spell name inside the bar on the left, the
 	countdown inside on the right, a latency zone shaded at the end of the
 	bar, and a red flash reading "Interrupted" when a cast is stopped.
@@ -33,10 +33,10 @@ local GREEN  = { 0.0, 1.0, 0.0 }
 local GRAY   = { 0.7, 0.7, 0.7 }
 local RED    = { 1.0, 0.0, 0.0 }
 
--- Quartz colours
-local QUARTZ_CAST    = { 1.0, 0.7, 0.0 }
-local QUARTZ_CHANNEL = { 0.2, 0.7, 1.0 }
-local QUARTZ_FAIL    = { 0.85, 0.15, 0.15 }
+-- Squawk Castbar colours
+local SQUAWK_CAST    = { 1.0, 0.7, 0.0 }
+local SQUAWK_CHANNEL = { 0.2, 0.7, 1.0 }
+local SQUAWK_FAIL    = { 0.85, 0.15, 0.15 }
 
 local FADE_TIME = 0.5     -- classic fade after a cast ends
 local FAIL_HOLD = 0.8     -- how long "Interrupted" stays up
@@ -100,7 +100,7 @@ local function createBar(key, unit, label)
 	frame.Background:SetAllPoints(frame)
 
 	-- The latency zone: how much of the end of the cast is already spent
-	-- waiting on the server.  Quartz shades it so you know when you can move.
+	-- waiting on the server, shaded so you know when you can move.
 	frame.Latency = frame.Bar:CreateTexture(nil, "ARTWORK")
 	frame.Latency:SetColorTexture(1, 0.2, 0.2, 0.45)
 	frame.Latency:SetDrawLayer("ARTWORK", 2)
@@ -121,7 +121,7 @@ local function createBar(key, unit, label)
 	frame.Overlay:SetAllPoints(frame)
 	frame.Overlay:SetFrameLevel(frame.Bar:GetFrameLevel() + 5)
 
-	-- Quartz: a crisp one pixel border
+	-- Squawk Castbar: a crisp one pixel border
 	frame.Edge = CreateFrame("Frame", nil, frame, "BackdropTemplate")
 	frame.Edge:SetPoint("TOPLEFT", -1, 1)
 	frame.Edge:SetPoint("BOTTOMRIGHT", 1, -1)
@@ -191,7 +191,7 @@ local function showsTime()
 	return settings.showTime and true or false
 end
 
-local function layoutQuartz(frame, width, height)
+local function layoutSquawk(frame, width, height)
 	frame.Bar:SetStatusBarTexture(FLAT)
 	frame.Background:SetColorTexture(0, 0, 0, 0.7)
 	frame.Edge:Show()
@@ -299,7 +299,7 @@ local function applySize(frame)
 	if classic() then
 		layoutClassic(frame, width, height)
 	else
-		layoutQuartz(frame, width, height)
+		layoutSquawk(frame, width, height)
 	end
 	local icon = showsIcon(frame)
 	frame.Icon:SetShown(icon)
@@ -570,7 +570,7 @@ local function failCast(frame, message)
 	detach(frame)
 	frame.Bar:SetMinMaxValues(0, 1)
 	frame.Bar:SetValue(1)
-	setColor(frame, classic() and RED or QUARTZ_FAIL)
+	setColor(frame, classic() and RED or SQUAWK_FAIL)
 	frame.Text:SetText(message)
 	frame.Time:SetText("")
 	frame.Latency:Hide()
@@ -613,7 +613,7 @@ local function startCast(frame)
 	if classic() then
 		color = channeling and GREEN or YELLOW
 	else
-		color = channeling and QUARTZ_CHANNEL or QUARTZ_CAST
+		color = channeling and SQUAWK_CHANNEL or SQUAWK_CAST
 	end
 	setColor(frame, color)
 
@@ -850,7 +850,7 @@ function Cast:Test()
 		frame.IconBorder:SetShown(icon and not classic())
 		frame.Bar:SetMinMaxValues(0, 1)
 		frame.Bar:SetValue(0.66)
-		setColor(frame, classic() and YELLOW or QUARTZ_CAST)
+		setColor(frame, classic() and YELLOW or SQUAWK_CAST)
 		frame.Spark:SetShown(classic() and CUF.db.castbar.classicSpark and true or false)
 		frame.Flash:Hide()
 		frame.Shield:Hide()

@@ -8,7 +8,8 @@
 
 	Nothing here has a fixed width.  Every row is measured after its text is
 	wrapped to the space it really has, rows that do not apply are left out
-	(the Quartz settings while the Classic cast bar is picked, and so on), and
+	(the Squawk Castbar settings while the Classic cast bar is picked, and so
+	on), and
 	the page is exactly as tall as what is on it, so the last row can always
 	be scrolled to.  Controls are built by hand rather than from Blizzard's
 	option templates, which move around between UI versions.
@@ -47,7 +48,7 @@ local HEALTH_TEXT = {
 }
 local BAR_TEXTURE = { { "classic", "Classic" }, { "flat", "Flat" } }
 local LEVEL_STYLE = { { "classic", "In the circle" }, { "centered", "Under the name" } }
-local CAST_STYLE = { { "quartz", "Quartz" }, { "classic", "Classic" } }
+local CAST_STYLE = { { "squawk", "Squawk Castbar" }, { "classic", "Classic" } }
 local SIDE = { { "below", "Below the frame" }, { "above", "Above the frame" } }
 local PET_STYLE = { { "classic", "Under the portrait" }, { "bar", "Bar beside the frame" } }
 local PLACEMENT = { { "blizzard", "Blizzard's spot" }, { "custom", "Custom" } }
@@ -290,7 +291,7 @@ local function unitRow(key, label)
 	}
 end
 
-local function quartz() return db().castbar.style ~= "classic" end
+local function squawkStyle() return db().castbar.style ~= "classic" end
 local function classicCast() return db().castbar.style == "classic" end
 
 local PAGES = {
@@ -585,7 +586,7 @@ local PAGES = {
 		sections = {
 			{
 				title = "Style",
-				text = "Quartz is a slim modern bar. Classic is vanilla's bar with its border, spark and finishing flash.",
+				text = "Squawk Castbar is a slim modern bar. Classic is vanilla's bar with its border, spark and finishing flash.",
 				rows = {
 					{ kind = "dropdown", label = "Cast bar style", values = CAST_STYLE,
 						get = function() return db().castbar.style end,
@@ -616,8 +617,8 @@ local PAGES = {
 				},
 			},
 			{
-				title = "Quartz style",
-				shown = function() return db().castbar.enabled and quartz() end,
+				title = "Squawk Castbar style",
+				shown = function() return db().castbar.enabled and squawkStyle() end,
 				rows = {
 					{ kind = "toggle", label = "Spell icon",
 						get = function() return db().castbar.showIcon end,
@@ -742,22 +743,41 @@ local PAGES = {
 		name = "Action bars",
 		sections = {
 			{
-				title = "Classic button skin",
-				text = "Blizzard's own buttons keep working underneath, so paging, keybinds and macros are untouched.",
+				title = "Action bars",
+				text = "Only the art changes: Blizzard's own bars keep paging, keybinds, macros and Edit Mode working.",
 				rows = {
-					{ kind = "toggle", label = "Skin the action buttons",
-						text = "The classic border and fonts on Blizzard's action buttons.",
+					{ kind = "toggle", label = "Classic buttons and bar",
+						text = "Vanilla's square button frames with square icons, the embossed stone strip behind the main bar and the classic page arrows.",
 						get = function() return db().actionBars.enabled end,
-						set = function(v) db().actionBars.enabled = v end },
+						set = function(v) db().actionBars.enabled = v end, reload = true },
+					{ kind = "toggle", label = "Gryphons",
+						text = "Vanilla's stone gryphons at both ends of the main bar, for both factions.",
+						get = function() return db().actionBars.gryphons end,
+						set = function(v) db().actionBars.gryphons = v end },
 					{ kind = "toggle", label = "Keybind text",
-						shown = function() return db().actionBars.enabled end,
 						get = function() return db().actionBars.showHotkeys end,
 						set = function(v) db().actionBars.showHotkeys = v end },
 					{ kind = "toggle", label = "Macro names",
-						shown = function() return db().actionBars.enabled end,
 						get = function() return db().actionBars.showMacroNames end,
 						set = function(v) db().actionBars.showMacroNames = v end },
-					{ kind = "note", text = "The gryphon end caps on this client are already the classic ones, so they are left alone. /cuf bars re-applies the skin and reports what it found." },
+				},
+			},
+			{
+				title = "Around the bars",
+				rows = {
+					{ kind = "toggle", label = "Classic bags",
+						text = "Square vanilla bag slots and the key ring on the stone strip.",
+						get = function() return db().actionBars.bags end,
+						set = function(v) db().actionBars.bags = v end, reload = true },
+					{ kind = "toggle", label = "Classic micro menu",
+						text = "The classic micro buttons with your portrait, on vanilla's stone panel.",
+						get = function() return db().actionBars.microMenu end,
+						set = function(v) db().actionBars.microMenu = v end, reload = true },
+					{ kind = "toggle", label = "Classic XP and reputation bars",
+						text = "Vanilla's segmented XP bar, purple (blue while rested) with the rest marker, and the reputation bar in its standing's colour.",
+						get = function() return db().actionBars.xpBar end,
+						set = function(v) db().actionBars.xpBar = v end },
+					{ kind = "note", text = "/cuf bars reports what was found and re-applies the art." },
 				},
 			},
 		},
