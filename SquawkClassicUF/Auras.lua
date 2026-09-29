@@ -67,7 +67,8 @@ Auras.readable = nil   -- nil until the first attempt tells us
 -- ---------------------------------------------------------------------------
 
 -- Walks a unit's auras, calling fn(name, dispelType, icon, count, index,
--- spellId) for each.  The index is the aura's real slot, which the tooltip
+-- spellId, data) for each.  data is the aura's own table (sourceUnit,
+-- duration, expirationTime, auraInstanceID), whose fields may be secret.  The index is the aura's real slot, which the tooltip
 -- needs, and is not the same as the position it ends up drawn in.
 -- Returns false if this client refused the read.
 local function readAuras(unit, filter, fn)
@@ -84,18 +85,19 @@ local function readAuras(unit, filter, fn)
 					data.applications, data.spellId
 			end)
 			if not readOk then return false end
-			if fn(name, dispel, icon, count, index, spellId) then return true end
+			if fn(name, dispel, icon, count, index, spellId, data) then return true end
 		end
 		return true
 	end
 
 	if type(UnitAura) == "function" then
 		for index = 1, 40 do
-			local ok, name, icon, count, dispel, _, _, _, _, _, spellId =
+			local ok, name, icon, count, dispel, duration, expiration, source, _, _, spellId =
 				pcall(UnitAura, unit, index, filter)
 			if not ok then return false end
 			if not name then return true end
-			if fn(tostring(name), dispel, icon, count, index, spellId) then return true end
+			local data = { sourceUnit = source, duration = duration, expirationTime = expiration }
+			if fn(tostring(name), dispel, icon, count, index, spellId, data) then return true end
 		end
 		return true
 	end

@@ -1,26 +1,51 @@
---[[ Cast bars, in the Quartz style.
+--[[ Cast bars, in two styles.
 
-	Quartz's look: a slim bar with a one pixel black border, the spell icon
-	sitting just outside on the left, the spell name inside the bar on the
-	left, the countdown inside on the right, a latency zone shaded at the end
-	of the bar, and a red flash reading "Interrupted" when a cast is stopped.
-	The Classic cast bar art is kept as an alternative style.
+	Quartz: a slim bar with a one pixel black border, the spell icon sitting
+	just outside on the left, the spell name inside the bar on the left, the
+	countdown inside on the right, a latency zone shaded at the end of the
+	bar, and a red flash reading "Interrupted" when a cast is stopped.
+
+	Classic: vanilla's cast bar, restored on this client -- the plain
+	UI-StatusBar fill tinted
+	yellow for a cast and green for a channel, the UI-CastingBar-Border art
+	around a 195x13 bar (the small border around the 150x10 target bar), the
+	spark riding the end of the fill, and on completion the bar turns green,
+	flashes white and fades out.  An interrupted cast turns red.
 
 	Timing is the awkward part on this client.  Cast times are secret values,
 	so the bar is filled by handing a Duration object to SetTimerDuration and
 	letting the engine animate it.  Channels drain from the readable remaining
-	time, and everything degrades to a static bar rather than throwing.
+	time, and everything degrades to a static bar rather than throwing.  The
+	classic spark is anchored to the end of the fill texture, so it follows
+	the engine's animation without ever reading a value.
 ]]
 
 local CUF = SquawkClassicUF
 local Cast = {}
 CUF.Cast = Cast
 
-local CLASSIC_BORDER = CUF.Art.castBorder
-local CLASSIC_FILL = CUF.Art.castFill
+local Art = CUF.Art
 local FLAT = "Interface\\Buttons\\WHITE8X8"
 
+-- vanilla's cast bar colours
+local YELLOW = { 1.0, 0.7, 0.0 }
+local GREEN  = { 0.0, 1.0, 0.0 }
+local GRAY   = { 0.7, 0.7, 0.7 }
+local RED    = { 1.0, 0.0, 0.0 }
+
+-- Quartz colours
+local QUARTZ_CAST    = { 1.0, 0.7, 0.0 }
+local QUARTZ_CHANNEL = { 0.2, 0.7, 1.0 }
+local QUARTZ_FAIL    = { 0.85, 0.15, 0.15 }
+
+local FADE_TIME = 0.5     -- classic fade after a cast ends
+local FAIL_HOLD = 0.8     -- how long "Interrupted" stays up
+
 Cast.bars = {}
+
+local function classic()
+	return CUF.db.castbar.style == "classic"
+end
 
 -- ---------------------------------------------------------------------------
 -- reading the cast
@@ -39,25 +64,22 @@ local function castInfo(unit)
 	return nil
 end
 
+-- width, height for this bar in the current style
 local function sizeFor(unit)
 	local settings = CUF.db.castbar
-	if unit == "target" then
+	if classic() then
+		if unit ~= "player" then return settings.classicTargetWidth or 150, 10 end
+		return settings.classicWidth or 195, 13
+	end
+	if unit ~= "player" then
 		return settings.targetWidth or 200, settings.targetHeight or 16
 	end
 	return settings.width, settings.height
 end
 
 -- ---------------------------------------------------------------------------
--- building a bar
+-- building a bar (every piece of both styles; the layout shows one set)
 -- ---------------------------------------------------------------------------
-
-local function barTexture()
-	if CUF.db.castbar.style == "classic" and CUF:TextureExists(CLASSIC_FILL) then
-		return CLASSIC_FILL
-	end
-	-- Quartz bars are flat; the Classic fill is missing on this client anyway.
-	return CUF.db.castbar.style == "classic" and CUF.Art.statusBar or FLAT
-end
 
 local function createBar(key, unit, label)
 	local width, height = sizeFor(unit)
@@ -65,17 +87,17 @@ local function createBar(key, unit, label)
 	frame:SetSize(width, height)
 	frame.unit = unit
 	frame.label = label
+	frame.small = unit ~= "player"
 	frame:Hide()
 
 	frame.Bar = CreateFrame("StatusBar", nil, frame)
 	frame.Bar:SetAllPoints(frame)
-	frame.Bar:SetStatusBarTexture(barTexture())
+	frame.Bar:SetStatusBarTexture(Art.statusBar)
 	frame.Bar:SetMinMaxValues(0, 1)
 	frame.Bar:SetValue(0)
 
 	frame.Background = frame:CreateTexture(nil, "BACKGROUND")
 	frame.Background:SetAllPoints(frame)
-	frame.Background:SetColorTexture(0, 0, 0, 0.7)
 
 	-- The latency zone: how much of the end of the cast is already spent
 	-- waiting on the server.  Quartz shades it so you know when you can move.
@@ -86,12 +108,43 @@ local function createBar(key, unit, label)
 	frame.Latency:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
 	frame.Latency:Hide()
 
+	-- classic spark: rides the right edge of the fill texture
+	frame.Spark = frame.Bar:CreateTexture(nil, "OVERLAY")
+	frame.Spark:SetTexture(Art.castSpark)
+	frame.Spark:SetBlendMode("ADD")
+	frame.Spark:SetSize(32, 32)
+	local fill = frame.Bar:GetStatusBarTexture()
+	if fill then frame.Spark:SetPoint("CENTER", fill, "RIGHT", 0, 0) end
+	frame.Spark:Hide()
+
 	frame.Overlay = CreateFrame("Frame", nil, frame)
 	frame.Overlay:SetAllPoints(frame)
 	frame.Overlay:SetFrameLevel(frame.Bar:GetFrameLevel() + 5)
 
+	-- Quartz: a crisp one pixel border
+	frame.Edge = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+	frame.Edge:SetPoint("TOPLEFT", -1, 1)
+	frame.Edge:SetPoint("BOTTOMRIGHT", 1, -1)
+	frame.Edge:SetBackdrop({ edgeFile = FLAT, edgeSize = 1 })
+	frame.Edge:SetBackdropBorderColor(0, 0, 0, 1)
+	frame.Edge:SetFrameLevel(frame.Overlay:GetFrameLevel() + 1)
+
+	-- Classic: the frame art, the flash and the uninterruptible shield
+	frame.Border = frame.Overlay:CreateTexture(nil, "ARTWORK")
+	frame.Border:SetTexture(frame.small and Art.castBorderSmall or Art.castBorder)
+	frame.Border:Hide()
+
+	frame.Shield = frame.Overlay:CreateTexture(nil, "ARTWORK")
+	frame.Shield:SetDrawLayer("ARTWORK", 1)
+	frame.Shield:SetTexture(Art.castShieldSmall)
+	frame.Shield:Hide()
+
+	frame.Flash = frame.Overlay:CreateTexture(nil, "OVERLAY")
+	frame.Flash:SetTexture(frame.small and Art.castFlashSmall or Art.castFlash)
+	frame.Flash:SetBlendMode("ADD")
+	frame.Flash:Hide()
+
 	frame.Text = frame.Overlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	frame.Text:SetJustifyH("LEFT")
 	frame.Text:SetShadowColor(0, 0, 0, 1)
 	frame.Text:SetShadowOffset(1, -1)
 
@@ -106,23 +159,6 @@ local function createBar(key, unit, label)
 	frame.IconBorder = frame.Overlay:CreateTexture(nil, "BACKGROUND")
 	frame.IconBorder:SetColorTexture(0, 0, 0, 1)
 
-	-- Quartz: a crisp one pixel border.  Classic: the old cast bar frame art.
-	frame.Edge = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-	frame.Edge:SetPoint("TOPLEFT", -1, 1)
-	frame.Edge:SetPoint("BOTTOMRIGHT", 1, -1)
-	frame.Edge:SetBackdrop({
-		edgeFile = FLAT, edgeSize = 1,
-	})
-	frame.Edge:SetBackdropBorderColor(0, 0, 0, 1)
-	frame.Edge:SetFrameLevel(frame.Overlay:GetFrameLevel() + 1)
-
-	if CUF:TextureExists(CLASSIC_BORDER) then
-		frame.ClassicArt = frame.Overlay:CreateTexture(nil, "OVERLAY")
-		frame.ClassicArt:SetTexture(CLASSIC_BORDER)
-		frame.ClassicArt:SetDrawLayer("OVERLAY", 2)
-		frame.ClassicArt:Hide()
-	end
-
 	return frame
 end
 
@@ -130,45 +166,55 @@ end
 -- layout, per style
 -- ---------------------------------------------------------------------------
 
-local function applySize(frame)
+-- A FontString given an explicit width WRAPS, so a long spell name broke onto
+-- a second line and overlapped the bar.  Both sides are anchored instead and
+-- wrapping is off, so a long name is truncated with an ellipsis.
+local function singleLine(text)
+	text:SetWidth(0)
+	pcall(text.SetWordWrap, text, false)
+	pcall(text.SetMaxLines, text, 1)
+	pcall(text.SetNonSpaceWrap, text, false)
+end
+
+local function showsIcon(frame)
 	local settings = CUF.db.castbar
-	local width, height = sizeFor(frame.unit)
-	frame:SetSize(width, height)
-	frame.Bar:SetStatusBarTexture(barTexture())
+	if classic() then
+		if frame.small then return settings.classicTargetIcon and true or false end
+		return settings.classicIcon and true or false
+	end
+	return settings.showIcon and true or false
+end
 
-	local quartz = settings.style ~= "classic"
+local function showsTime()
+	local settings = CUF.db.castbar
+	if classic() then return settings.classicTime and true or false end
+	return settings.showTime and true or false
+end
 
-	-- icon just outside the bar, square, matching its height
+local function layoutQuartz(frame, width, height)
+	frame.Bar:SetStatusBarTexture(FLAT)
+	frame.Background:SetColorTexture(0, 0, 0, 0.7)
+	frame.Edge:Show()
+	frame.Border:Hide()
+	frame.Shield:Hide()
+	frame.Flash:Hide()
+	frame.Spark:Hide()
+
 	frame.Icon:SetSize(height, height)
 	frame.Icon:ClearAllPoints()
+	frame.Icon:SetPoint("RIGHT", frame, "LEFT", -3, 0)
 	frame.IconBorder:ClearAllPoints()
-	if quartz then
-		frame.Icon:SetPoint("RIGHT", frame, "LEFT", -3, 0)
-		frame.IconBorder:SetPoint("TOPLEFT", frame.Icon, "TOPLEFT", -1, 1)
-		frame.IconBorder:SetPoint("BOTTOMRIGHT", frame.Icon, "BOTTOMRIGHT", 1, -1)
-	else
-		frame.Icon:SetSize(height + 6, height + 6)
-		frame.Icon:SetPoint("RIGHT", frame, "LEFT", -6, 0)
-		frame.IconBorder:SetPoint("TOPLEFT", frame.Icon, "TOPLEFT", 0, 0)
-		frame.IconBorder:SetPoint("BOTTOMRIGHT", frame.Icon, "BOTTOMRIGHT", 0, 0)
-	end
+	frame.IconBorder:SetPoint("TOPLEFT", frame.Icon, "TOPLEFT", -1, 1)
+	frame.IconBorder:SetPoint("BOTTOMRIGHT", frame.Icon, "BOTTOMRIGHT", 1, -1)
 
-	-- The timer is placed first, because the name is bounded by it.
+	-- timer first, because the name is bounded by it
 	frame.Time:ClearAllPoints()
 	frame.Time:SetPoint("RIGHT", frame, "RIGHT", -3, 0)
-
-	-- A FontString given an explicit width WRAPS, so a long spell name broke
-	-- onto a second line and overlapped the bar.  Anchoring both sides bounds
-	-- it by the timer's real position rather than a guessed reserve, and with
-	-- wrapping off the name is truncated with an ellipsis instead.
 	frame.Text:ClearAllPoints()
-	frame.Text:SetWidth(0)
+	singleLine(frame.Text)
 	frame.Text:SetPoint("LEFT", frame, "LEFT", 3, 0)
 	frame.Text:SetPoint("RIGHT", frame.Time, "LEFT", -6, 0)
 	frame.Text:SetJustifyH("LEFT")
-	pcall(frame.Text.SetWordWrap, frame.Text, false)
-	pcall(frame.Text.SetMaxLines, frame.Text, 1)
-	pcall(frame.Text.SetNonSpaceWrap, frame.Text, false)
 
 	local file = frame.Text:GetFont()
 	if file then
@@ -176,17 +222,119 @@ local function applySize(frame)
 		frame.Text:SetFont(file, size, "")
 		frame.Time:SetFont(file, size, "")
 	end
+end
 
-	frame.Edge:SetShown(quartz)
-	if frame.ClassicArt then
-		frame.ClassicArt:SetShown(not quartz)
-		if not quartz then
-			local wScale, hScale = width / 195, height / 13
-			frame.ClassicArt:SetSize(256 * wScale, 64 * hScale)
-			frame.ClassicArt:ClearAllPoints()
-			frame.ClassicArt:SetPoint("TOPLEFT", frame, "TOPLEFT", -28 * wScale, 24 * hScale)
-		end
+local function anchorSpark(frame)
+	local fill = frame.Bar:GetStatusBarTexture()
+	frame.Spark:ClearAllPoints()
+	if fill then frame.Spark:SetPoint("CENTER", fill, "RIGHT", 0, 0) end
+end
+
+local function layoutClassic(frame, width, height)
+	frame.Bar:SetStatusBarTexture(Art.statusBar)
+	anchorSpark(frame)
+	frame.Background:SetColorTexture(0, 0, 0, 0.5)
+	frame.Edge:Hide()
+	frame.Border:Show()
+
+	frame.Border:ClearAllPoints()
+	frame.Flash:ClearAllPoints()
+	frame.Shield:ClearAllPoints()
+	if frame.small then
+		-- UI-CastingBar-Border-Small stretches: 23px of art past each end
+		frame.Border:SetHeight(49)
+		frame.Border:SetPoint("TOPLEFT", frame, "TOPLEFT", -23, 20)
+		frame.Border:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 23, 20)
+		frame.Flash:SetHeight(49)
+		frame.Flash:SetPoint("TOPLEFT", frame, "TOPLEFT", -23, 20)
+		frame.Flash:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 23, 20)
+		frame.Shield:SetHeight(49)
+		frame.Shield:SetPoint("TOPLEFT", frame, "TOPLEFT", -28, 20)
+		frame.Shield:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 18, 20)
+		frame.Spark:SetSize(32, 32)
+	else
+		-- UI-CastingBar-Border is drawn for a 195px bar; stretch it with the bar
+		local stretch = width / 195
+		frame.Border:SetSize(256 * stretch, 64)
+		frame.Border:SetPoint("TOP", frame, "TOP", 0, 28)
+		frame.Flash:SetSize(256 * stretch, 64)
+		frame.Flash:SetPoint("TOP", frame, "TOP", 0, 28)
+		frame.Spark:SetSize(32, 32)
 	end
+	frame.Flash:Hide()
+
+	-- The border overhangs the bar, so the icon sits outside the art.
+	local overhang = frame.small and 23 or math.floor((256 * width / 195 - width) / 2)
+	local iconSize = frame.small and 16 or 20
+	frame.Icon:SetSize(iconSize, iconSize)
+	frame.Icon:ClearAllPoints()
+	frame.Icon:SetPoint("RIGHT", frame, "LEFT", -(overhang + 2), 0)
+	frame.IconBorder:ClearAllPoints()
+	frame.IconBorder:SetPoint("TOPLEFT", frame.Icon, "TOPLEFT", -1, 1)
+	frame.IconBorder:SetPoint("BOTTOMRIGHT", frame.Icon, "BOTTOMRIGHT", 1, -1)
+
+	-- Vanilla centred the name on the bar.  With the timer on, the name gives
+	-- it room on the right instead of running underneath it.
+	frame.Time:ClearAllPoints()
+	frame.Time:SetPoint("RIGHT", frame, "RIGHT", -2, frame.small and 0 or 1)
+	frame.Text:ClearAllPoints()
+	singleLine(frame.Text)
+	frame.Text:SetJustifyH("CENTER")
+	local top = frame.small and 4 or 5
+	frame.Text:SetHeight(16)
+	frame.Text:SetPoint("TOPLEFT", frame, "TOPLEFT", 2, top)
+	if showsTime() then
+		frame.Text:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -34, top)
+	else
+		frame.Text:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, top)
+	end
+
+	frame.Text:SetFontObject(frame.small and "SystemFont_Shadow_Small" or "GameFontHighlight")
+	frame.Time:SetFontObject("GameFontHighlightSmall")
+end
+
+local function applySize(frame)
+	local width, height = sizeFor(frame.unit)
+	frame:SetSize(width, height)
+	if classic() then
+		layoutClassic(frame, width, height)
+	else
+		layoutQuartz(frame, width, height)
+	end
+	local icon = showsIcon(frame)
+	frame.Icon:SetShown(icon)
+	frame.IconBorder:SetShown(icon and not classic())
+	if not showsTime() then frame.Time:SetText("") end
+end
+
+-- Where Blizzard hangs the target's spell bar (TargetSpellBarMixin:
+-- AdjustPosition), adjusted for the classic art, all measured from the
+-- unit frame:
+--   under the aura block, when the auras run below the frame  (18+2, -10-5)
+--   otherwise under the frame itself                          (43+2, ...)
+--     with the target of target showing                        -46+22
+--     around an elite / rare dragon                            5-14
+--     plain                                                    5-2
+-- With the target of target showing, the bar only drops under the auras
+-- once there are more than two rows of them (the first two are narrowed to
+-- clear it and the bar sits beside them).
+local function blizzardSpot(frame, parent)
+	local rows = parent.auraRows or 0
+	local tot = false
+	if frame.unit == "target" and CUF.db.units.targettarget.attached then
+		tot = CUF.Units.frames.targettarget ~= nil and UnitExists("targettarget") and true or false
+	end
+	local underAuras = parent.AuraBlock and rows > 0 and (not tot or rows > 2)
+	if underAuras then
+		return parent.AuraBlock, 20, -15
+	end
+	local y = 3
+	if tot then
+		y = -24
+	elseif parent.haveElite then
+		y = -9
+	end
+	return parent, 45, y
 end
 
 local function position(frame)
@@ -195,39 +343,46 @@ local function position(frame)
 	frame:ClearAllPoints()
 	local scale = frame:GetScale()
 
-	if frame.unit == "target" and settings.targetAttached then
-		local targetFrame = CUF.Units and CUF.Units.frames and CUF.Units.frames.target
-		if targetFrame then
-			local side = settings.targetAnchor or "below"
-			local gap = settings.targetGap or 8
+	local parent = frame.unit ~= "player" and CUF.Units and CUF.Units.frames
+		and CUF.Units.frames[frame.unit]
+	if parent and settings.targetAttached then
+		-- offsets are in the unit frame's own scale
+		local ratio = parent:GetScale() / scale
 
-			local auras = CUF.db.targetAuras
-			if auras and auras.enabled then
-				local rows = 0
-				if auras.buffAnchor == side then
-					rows = rows + math.ceil((auras.buffs or 0) / auras.perRow)
-				end
-				if auras.debuffAnchor == side then
-					rows = rows + math.ceil((auras.debuffs or 0) / auras.perRow)
-				end
-				if rows > 0 then gap = gap + rows * ((auras.size or 21) + 2) + 4 end
-			end
-
-			local x = (settings.targetOffsetX or 0) / scale
-			if side == "above" then
-				frame:SetPoint("BOTTOM", targetFrame, "TOP", x, gap / scale)
-			else
-				frame:SetPoint("TOP", targetFrame, "BOTTOM", x, -gap / scale)
-			end
+		if (settings.targetPlacement or "blizzard") == "blizzard" then
+			local anchor, x, y = blizzardSpot(frame, parent)
+			frame:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", x * ratio, y * ratio)
 			return
 		end
+
+		-- custom: a side of the frame, a gap, and a nudge
+		local side = settings.targetAnchor or "below"
+		local gap = settings.targetGap or 8
+		if classic() then gap = gap + 20 end   -- the art rises 20px above the bar
+		local x = (settings.targetOffsetX or 0) * ratio
+		if side == "above" then
+			frame:SetPoint("BOTTOM", parent, "TOP", x, gap * ratio)
+		else
+			local below = parent.AuraBlock and (parent.auraRows or 0) > 0 and parent.AuraBlock or parent
+			frame:SetPoint("TOP", below, "BOTTOM", below == parent and x or x, -gap * ratio)
+		end
+		return
 	end
 
 	if frame.unit == "player" then
 		frame:SetPoint("BOTTOM", UIParent, "BOTTOM", settings.x / scale, settings.y / scale)
+	elseif frame.unit == "focus" then
+		frame:SetPoint("BOTTOM", UIParent, "BOTTOM", settings.x / scale, (settings.y + 120) / scale)
 	else
 		frame:SetPoint("BOTTOM", UIParent, "BOTTOM", settings.x / scale, (settings.y + 60) / scale)
 	end
+end
+
+-- Called by the unit frames whenever their auras, classification or target
+-- of target change, since each moves the bar.  Plain frames, so combat is fine.
+function Cast:Reposition(unit)
+	local frame = Cast.bars[unit]
+	if frame then position(frame) end
 end
 
 -- ---------------------------------------------------------------------------
@@ -236,7 +391,7 @@ end
 
 local function showLatency(frame, totalSeconds)
 	frame.Latency:Hide()
-	if not CUF.db.castbar.showLatency or frame.unit ~= "player" then return end
+	if classic() or not CUF.db.castbar.showLatency or frame.unit ~= "player" then return end
 	totalSeconds = CUF.SafeNumber(totalSeconds)
 	if not totalSeconds or totalSeconds <= 0 then return end
 
@@ -354,7 +509,8 @@ local function attachDuration(frame, channeling)
 	return true, total
 end
 
-local function stopCast(frame)
+-- Takes the bar off the engine's timer and freezes it where we say.
+local function detach(frame)
 	if frame.engineTimed and frame.Bar.SetTimerDuration then
 		pcall(frame.Bar.SetTimerDuration, frame.Bar, nil)
 	end
@@ -363,29 +519,68 @@ local function stopCast(frame)
 	frame.channelTotal = nil
 	frame.duration = nil
 	frame.startTime, frame.endTime = nil, nil
+end
+
+local function stopCast(frame)
+	detach(frame)
 	frame.holdUntil = nil
+	frame.fadeStart = nil
+	frame.stoppedAt = GetTime()
 	frame.Latency:Hide()
+	frame.Spark:Hide()
+	frame.Flash:Hide()
+	frame.Shield:Hide()
+	frame:SetAlpha(1)
 	frame:Hide()
 end
 
--- Quartz turns the bar red and says what happened, then clears.
-local function failCast(frame, message)
-	if not frame:IsShown() then return end
-	if frame.engineTimed and frame.Bar.SetTimerDuration then
-		pcall(frame.Bar.SetTimerDuration, frame.Bar, nil)
-	end
-	frame.engineTimed = false
-	frame.manualDrain = false
-	frame.startTime, frame.endTime = nil, nil
-	frame.duration = nil
+local function setColor(frame, color)
+	frame.Bar:SetStatusBarColor(color[1], color[2], color[3])
+end
 
+-- Classic: the cast completed, so the bar fills, turns green, flashes and
+-- fades.  A channel running out just fades.
+local function finishCast(frame)
+	if not classic() or not frame:IsShown() then
+		stopCast(frame)
+		return
+	end
+	local wasChannel = frame.channeling
+	detach(frame)
+	frame.Latency:Hide()
+	frame.Spark:Hide()
+	frame.Shield:Hide()
+	frame.Bar:SetMinMaxValues(0, 1)
+	frame.Bar:SetValue(wasChannel and 0 or 1)
+	if not wasChannel then setColor(frame, GREEN) end
+	frame.Flash:SetShown(CUF.db.castbar.classicFlash and not wasChannel and true or false)
+	frame.Flash:SetAlpha(1)
+	frame.Time:SetText("")
+	frame.holdUntil = nil
+	frame.fadeStart = GetTime()
+end
+
+-- Red, with what happened written on it, then gone.
+local function failCast(frame, message)
+	-- An interrupt can land just after the stop that ended the bar; bring it
+	-- back so the red still shows.
+	local justStopped = frame.stoppedAt and (GetTime() - frame.stoppedAt) < 0.3
+	if not frame:IsShown() and not justStopped then return end
+
+	detach(frame)
 	frame.Bar:SetMinMaxValues(0, 1)
 	frame.Bar:SetValue(1)
-	frame.Bar:SetStatusBarColor(0.85, 0.15, 0.15)
+	setColor(frame, classic() and RED or QUARTZ_FAIL)
 	frame.Text:SetText(message)
 	frame.Time:SetText("")
 	frame.Latency:Hide()
-	frame.holdUntil = GetTime() + 0.8
+	frame.Spark:Hide()
+	frame.Flash:Hide()
+	frame.Shield:Hide()
+	frame:SetAlpha(1)
+	frame.fadeStart = nil
+	frame.holdUntil = GetTime() + FAIL_HOLD
+	frame:Show()
 end
 
 local function startCast(frame)
@@ -396,31 +591,50 @@ local function startCast(frame)
 	end
 
 	frame.holdUntil = nil
+	frame.fadeStart = nil
 	frame.channeling = channeling
 	frame.engineTimed = false
 	frame.manualDrain = false
 	frame.duration = nil
+	frame:SetAlpha(1)
+	frame.Flash:Hide()
 
 	frame.Text:SetText(text or name)
 	frame.Icon:SetTexture(texture)
-	local showIcon = CUF.db.castbar.showIcon and true or false
-	frame.Icon:SetShown(showIcon)
-	frame.IconBorder:SetShown(showIcon)
+	local icon = showsIcon(frame)
+	frame.Icon:SetShown(icon)
+	frame.IconBorder:SetShown(icon and not classic())
 
 	-- notInterruptible is a *secret boolean* on this client: testing it throws
 	-- ("boolean test on a secret boolean value").  Colour from what we know
 	-- for certain, then let the widget consume the secret itself to grey out
 	-- an uninterruptible cast.
-	local r, g, b = 1, 0.7, 0
-	if channeling then r, g, b = 0.2, 0.7, 1 end
-
-	frame.Bar:SetStatusBarColor(r, g, b)
-	if frame.Fallback then frame.Fallback:SetVertexColor(r, g, b) end
+	local color
+	if classic() then
+		color = channeling and GREEN or YELLOW
+	else
+		color = channeling and QUARTZ_CHANNEL or QUARTZ_CAST
+	end
+	setColor(frame, color)
 
 	local fillTexture = frame.Bar:GetStatusBarTexture()
 	if fillTexture and fillTexture.SetVertexColorFromBoolean then
 		pcall(fillTexture.SetVertexColorFromBoolean, fillTexture, notInterruptible,
-			0.6, 0.6, 0.6, r, g, b)
+			GRAY[1], GRAY[2], GRAY[3], color[1], color[2], color[3])
+	end
+
+	-- the target's shield, shown by the same secret
+	frame.Shield:Hide()
+	if classic() and frame.small then
+		local readable = CUF.SafeFlag(notInterruptible)
+		if readable ~= nil then
+			frame.Shield:SetShown(readable)
+		elseif frame.Shield.SetAlphaFromBoolean then
+			frame.Shield:Show()
+			if not pcall(frame.Shield.SetAlphaFromBoolean, frame.Shield, notInterruptible, 1, 0) then
+				frame.Shield:Hide()
+			end
+		end
 	end
 
 	local attached, total = attachDuration(frame, channeling)
@@ -443,22 +657,42 @@ local function startCast(frame)
 		end
 	end
 
+	local sparkRides = not (channeling and frame.engineTimed)
+	frame.Spark:SetShown(classic() and CUF.db.castbar.classicSpark and sparkRides and true or false)
 	frame.castTotal = CUF.SafeNumber(total)
 	showLatency(frame, total)
 	frame:Show()
 end
 
 local function onUpdate(frame)
+	-- the classic fade after a cast ends
+	if frame.fadeStart then
+		local progress = (GetTime() - frame.fadeStart) / FADE_TIME
+		if progress >= 1 then
+			stopCast(frame)
+		else
+			frame:SetAlpha(1 - progress)
+		end
+		return
+	end
+
 	if frame.holdUntil then
-		if GetTime() >= frame.holdUntil then stopCast(frame) end
+		if GetTime() >= frame.holdUntil then
+			if classic() then
+				frame.holdUntil = nil
+				frame.fadeStart = GetTime()
+			else
+				stopCast(frame)
+			end
+		end
 		return
 	end
 
 	local settings = CUF.db.castbar
 	local function setTime(remaining)
-		if not settings.showTime then
+		if not showsTime() then
 			frame.Time:SetText("")
-		elseif settings.showTotal and CUF.SafeNumber(frame.castTotal) then
+		elseif not classic() and settings.showTotal and CUF.SafeNumber(frame.castTotal) then
 			frame.Time:SetText(CUF.SafeFormat("%.1f / %.1f", remaining, frame.castTotal))
 		else
 			frame.Time:SetText(CUF.SafeFormat("%.1f", remaining))
@@ -472,7 +706,7 @@ local function onUpdate(frame)
 			pcall(frame.Bar.SetValue, frame.Bar, raw)
 			local remaining = CUF.SafeNumber(raw)
 			if remaining then
-				if remaining <= 0 then stopCast(frame) return end
+				if remaining <= 0 then finishCast(frame) return end
 				setTime(remaining)
 			end
 		end
@@ -492,7 +726,7 @@ local function onUpdate(frame)
 
 	if not frame.startTime or not frame.endTime then return end
 	local now = GetTime()
-	if now >= frame.endTime then stopCast(frame) return end
+	if now >= frame.endTime then finishCast(frame) return end
 
 	local elapsed = now - frame.startTime
 	local total = frame.endTime - frame.startTime
@@ -507,11 +741,17 @@ end
 local function registerEvents(frame)
 	frame:SetScript("OnEvent", function(self, event)
 		if event == "UNIT_SPELLCAST_INTERRUPTED" then
-			failCast(self, "Interrupted")
+			failCast(self, _G.INTERRUPTED or "Interrupted")
 		elseif event == "UNIT_SPELLCAST_FAILED" then
-			failCast(self, "Failed")
+			failCast(self, _G.FAILED or "Failed")
 		elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_CHANNEL_STOP" then
+			-- A stop straight after an interrupt must not wipe the red.
+			if self.holdUntil then return end
+			finishCast(self)
+		elseif event == "PLAYER_TARGET_CHANGED" or event == "PLAYER_FOCUS_CHANGED" then
+			-- a new target: never finish the old one's cast on the new frame
 			stopCast(self)
+			startCast(self)
 		else
 			startCast(self)
 		end
@@ -527,6 +767,8 @@ local function registerEvents(frame)
 	end
 	if frame.unit == "target" then
 		frame:RegisterEvent("PLAYER_TARGET_CHANGED")
+	elseif frame.unit == "focus" then
+		pcall(frame.RegisterEvent, frame, "PLAYER_FOCUS_CHANGED")
 	end
 	frame:SetScript("OnUpdate", onUpdate)
 end
@@ -546,6 +788,10 @@ function Cast:Initialize()
 		Cast.bars.target = createBar("Target", "target", "Target cast bar")
 		registerEvents(Cast.bars.target)
 	end
+	if CUF.db.castbar.showFocus and CUF.db.units.focus.enabled and not Cast.bars.focus then
+		Cast.bars.focus = createBar("Focus", "focus", "Focus cast bar")
+		registerEvents(Cast.bars.focus)
+	end
 
 	for _, frame in pairs(Cast.bars) do
 		applySize(frame)
@@ -559,22 +805,26 @@ end
 
 function Cast:ApplySettings()
 	if not CUF.db.castbar.enabled then
-		for _, frame in pairs(Cast.bars) do frame:Hide() end
+		for _, frame in pairs(Cast.bars) do stopCast(frame) end
 		return
 	end
 
 	Cast:Initialize()
-	for _, frame in pairs(Cast.bars) do
+	for key, frame in pairs(Cast.bars) do
+		if (key == "target" and not CUF.db.castbar.showTarget)
+			or (key == "focus" and not CUF.db.castbar.showFocus) then
+			stopCast(frame)
+		end
 		applySize(frame)
 		position(frame)
 	end
 end
 
--- Shows both bars filled for a few seconds, so "it never appears" can be told
--- apart from "it appears somewhere I am not looking".
+-- Shows both bars mid-cast for a few seconds, then plays the ending of the
+-- current style, so both the look and the finish can be judged.
 function Cast:Test()
 	if not CUF.db.castbar.enabled then
-		CUF:Print("|cffff0000the cast bar option is switched off|r - turn \"Cast bar\" back on under Cast & tooltips")
+		CUF:Print("|cffff0000the cast bar option is switched off|r - turn \"Player cast bar\" back on under Cast bars")
 		return
 	end
 	Cast:Initialize()
@@ -586,29 +836,33 @@ function Cast:Test()
 	for key, frame in pairs(Cast.bars) do
 		applySize(frame)
 		position(frame)
-		frame.holdUntil = nil
-		frame.engineTimed, frame.manualDrain = false, false
-		frame.startTime, frame.endTime = nil, nil
+		detach(frame)
+		frame.holdUntil, frame.fadeStart = nil, nil
+		frame.channeling = false
 		frame.castTotal = 2.5
+		frame:SetAlpha(1)
 
-		frame.Text:SetText(key == "player" and "Test cast" or "Target test cast")
-		frame.Time:SetText("1.7")
+		frame.Text:SetText(key == "player" and "Test cast" or (key == "focus" and "Focus test cast" or "Target test cast"))
+		frame.Time:SetText(showsTime() and "1.7" or "")
 		frame.Icon:SetTexture("Interface\\Icons\\Spell_Frost_FrostBolt02")
-		local showIcon = CUF.db.castbar.showIcon and true or false
-		frame.Icon:SetShown(showIcon)
-		frame.IconBorder:SetShown(showIcon)
+		local icon = showsIcon(frame)
+		frame.Icon:SetShown(icon)
+		frame.IconBorder:SetShown(icon and not classic())
 		frame.Bar:SetMinMaxValues(0, 1)
 		frame.Bar:SetValue(0.66)
-		frame.Bar:SetStatusBarColor(1, 0.7, 0)
+		setColor(frame, classic() and YELLOW or QUARTZ_CAST)
+		frame.Spark:SetShown(classic() and CUF.db.castbar.classicSpark and true or false)
+		frame.Flash:Hide()
+		frame.Shield:Hide()
 		showLatency(frame, 2.5)
 		frame:Show()
-
-		CUF:Print(("%s bar test: %dx%d at %d,%d"):format(
-			key, frame:GetWidth(), frame:GetHeight(),
-			frame:GetLeft() or -1, frame:GetTop() or -1))
 	end
 
-	C_Timer.After(5, function()
-		for _, frame in pairs(Cast.bars) do stopCast(frame) end
+	C_Timer.After(4, function()
+		for _, frame in pairs(Cast.bars) do
+			if frame:IsShown() and not frame.engineTimed and not frame.startTime then
+				finishCast(frame)
+			end
+		end
 	end)
 end

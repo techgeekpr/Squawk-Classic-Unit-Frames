@@ -21,7 +21,7 @@ local ADDON = ...
 SquawkClassicUF = {}
 local CUF = SquawkClassicUF
 
-CUF.Version = "1.0.0"
+CUF.Version = "1.2.0"
 
 -- ---------------------------------------------------------------------------
 -- Classic art, paths and geometry straight from Blizzard's Classic FrameXML
@@ -43,6 +43,22 @@ CUF.Art = {
 	pvpFFA      = "Interface\\TargetingFrame\\UI-PVP-FFA",
 	castFill     = "Interface\\CastingBar\\UI-CastingBar-Fill",
 	castBorder   = "Interface\\CastingBar\\UI-CastingBar-Border",
+
+	-- The rest of the classic look; all of these still ship with this client.
+	castBorderSmall = "Interface\\CastingBar\\UI-CastingBar-Border-Small",
+	castShieldSmall = "Interface\\CastingBar\\UI-CastingBar-Small-Shield",
+	castSpark    = "Interface\\CastingBar\\UI-CastingBar-Spark",
+	castFlash    = "Interface\\CastingBar\\UI-CastingBar-Flash",
+	castFlashSmall = "Interface\\CastingBar\\UI-CastingBar-Flash-Small",
+	minus        = "Interface\\TargetingFrame\\UI-TargetingFrame-Minus",
+	skull        = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull",
+	portraitMask = "Interface\\CharacterFrame\\TempPortraitAlphaMask",
+	attackBg     = "Interface\\TargetingFrame\\UI-TargetingFrame-AttackBackground",
+	leaderIcon   = "Interface\\GroupFrame\\UI-Group-LeaderIcon",
+	questBadge   = "Interface\\TargetingFrame\\PortraitQuestBadge",
+	partyFlash   = "Interface\\TargetingFrame\\UI-PartyFrame-Flash",
+	debuffOverlays = "Interface\\Buttons\\UI-Debuff-Overlays",
+	groupIndicator = "Interface\\CharacterFrame\\UI-CharacterFrame-GroupIndicator",
 	raidIcons    = "Interface\\TargetingFrame\\UI-RaidTargetingIcons",
 	stateIcon    = "Interface\\CharacterFrame\\UI-StateIcon",
 	petHappiness = "Interface\\PetPaperDollFrame\\UI-PetHappiness",
@@ -75,6 +91,9 @@ CUF.Geometry = {
 	backdropWidth = 119, backdropHeight = 41,
 	backdropOffsetX = 89.5, backdropOffsetY = -26,
 }
+
+-- Vanilla's health bar green.
+CUF.HealthGreen = { 0, 1, 0 }
 
 CUF.PowerColors = {
 	[0] = { 0.00, 0.00, 1.00 },  -- mana
@@ -162,15 +181,33 @@ local function barText(current, maximum, mode)
 		return string.format("%d / %d", now, top)
 	end)
 	if ok and type(text) == "string" then return text end
+	return nil   -- unreadable (secret); the caller formats it instead
+end
+
+-- When the values are secret the arithmetic above throws, but formatting
+-- does not: the client writes a secret number out when asked to.  So the
+-- numbers stay up in combat, as Blizzard's own do.  Percent needs division
+-- and cannot be done that way, so it falls back to the plain numbers.
+local function secretText(current, maximum, mode)
+	if mode == "none" then return "" end
+	local fmt = (mode == "current") and "%d" or "%d / %d"
+	local ok, text = pcall(string.format, fmt, current, maximum)
+	if ok and text ~= nil then return text end
 	return ""
 end
 
+local function statusText(current, maximum, mode)
+	local text = barText(current, maximum, mode)
+	if text ~= nil then return text end
+	return secretText(current, maximum, mode == "percent" and "currentmax" or mode)
+end
+
 function CUF.HealthText(unit, mode)
-	return barText(UnitHealth(unit), UnitHealthMax(unit), mode)
+	return statusText(UnitHealth(unit), UnitHealthMax(unit), mode)
 end
 
 function CUF.PowerText(unit, mode)
-	return barText(UnitPower(unit), UnitPowerMax(unit), mode)
+	return statusText(UnitPower(unit), UnitPowerMax(unit), mode)
 end
 
 -- ---------------------------------------------------------------------------
@@ -213,7 +250,7 @@ CUF.Defaults = {
 
 	classColorHealth = false,
 	healthText = "currentmax",     -- none | current | currentmax | percent
-	powerText = "none",
+	powerText = "currentmax",      -- Blizzard's status text shows both bars
 	showLevel = true,
 	showPortraits = true,
 	showRestIcon = true,
@@ -225,18 +262,30 @@ CUF.Defaults = {
 	barTexture = "classic",        -- classic | flat
 	fontSize = 10,
 
+	-- the finishing touches of the classic frames
+	roundPortraits = true,         -- the circular portrait mask
+	nameBackground = true,         -- the reaction-coloured plate behind a target's name
+	reactionHealth = false,        -- colour NPC health by reaction (vanilla kept it green)
+	levelColors = true,            -- a target's level in its difficulty colour, skull if unknown
+	statusGlow = true,             -- the player frame's pulsing rest / combat glow
+	showLeader = true,             -- the crown on the group leader
+	showGroupNumber = true,        -- "Group 3" over your frame in a raid
+	comboPoints = true,            -- combo points down the side of the target portrait
+	threatGlow = true,             -- the frame glows when you are on a threat list
+
 	units = {
 		player = { enabled = true, scale = 1.0, x = -220, y = -180, point = "TOP" },
 		target = { enabled = true, scale = 1.0, x = 220,  y = -180, point = "TOP" },
-		targettarget = { enabled = true, scale = 1.0, x = 390, y = -210, point = "TOP" },
+		targettarget = { enabled = true, scale = 1.0, x = 390, y = -210, point = "TOP", attached = true },
 		focus  = { enabled = true, scale = 1.0, x = -420, y = -300, point = "TOP" },
-		pet    = { enabled = true, scale = 1.0, x = -250, y = -272, point = "TOP" },
+		pet    = { enabled = true, scale = 1.0, x = -250, y = -272, point = "TOP", attached = true },
 	},
 
 	party = {
 		enabled = true, scale = 1.0, x = 20, y = -220, point = "TOPLEFT",
-		spacing = 12, showInRaid = false,
+		spacing = 10, showInRaid = false,     -- Blizzard's PartyFrame spacing (26 with pets)
 		showPetFrames = true,   -- replaces showPets, which nothing ever read
+		petStyle = "classic",   -- classic (small frame under the portrait) | bar (beside the frame)
 		useRaidStyle = false,   -- draw the party as raid-style boxes
 		includePlayer = false,  -- and put yourself in with them
 	},
@@ -256,8 +305,8 @@ CUF.Defaults = {
 
 	targetAuras = {
 		enabled = true,
-		buffs = 8,                  -- Classic showed up to 16; 8 is tidier
-		debuffs = 8,
+		buffs = 32,                 -- Blizzard's TargetFrame limits
+		debuffs = 16,
 		size = 21,
 		perRow = 8,
 
@@ -277,6 +326,16 @@ CUF.Defaults = {
 		enabled = true, scale = 1.0,
 		style = "quartz",           -- quartz | classic
 		width = 200, height = 18,
+
+		-- The classic style keeps its own sizes: its art is drawn for 195x13
+		-- (player) and 150x10 (target), and only the width can stretch.
+		classicWidth = 195,
+		classicTargetWidth = 150,
+		classicIcon = false,        -- vanilla's player bar had no icon
+		classicTargetIcon = true,   -- its target bar did
+		classicTime = false,        -- nor a timer
+		classicSpark = true,
+		classicFlash = true,        -- the white flash when a cast completes
 		showLatency = true,         -- shade the end of the bar by your latency
 		showTotal = false,          -- "1.2 / 2.5" instead of "1.2"
 		showTarget = true, showIcon = true, showTime = true,
@@ -285,6 +344,8 @@ CUF.Defaults = {
 		-- the target's bar has its own size, and by default hangs off the
 		-- target frame rather than sitting at a fixed spot on screen
 		targetAttached = true,
+		targetPlacement = "blizzard",      -- blizzard (Blizzard's own spot) | custom
+		showFocus = true,           -- the focus frame's own bar, placed like the target's
 		targetWidth = 200, targetHeight = 16,
 		targetAnchor = "below",     -- below | above the target frame
 		targetOffsetX = 0,
@@ -356,6 +417,32 @@ function CUF:InitDatabase()
 		if CUF.db.castbar.height == 13 then CUF.db.castbar.height = 18 end
 		if CUF.db.castbar.targetWidth == 150 then CUF.db.castbar.targetWidth = 200 end
 		if CUF.db.castbar.targetHeight == 12 then CUF.db.castbar.targetHeight = 16 end
+	end
+
+	-- Version 1.2 moved every frame onto Blizzard's exact layout; bring saved
+	-- profiles onto it once, after which every setting is the player's again.
+	-- A profile that went through it before the flag was renamed keeps it,
+	-- and the old flag is dropped.
+	for key, value in pairs(CUF.db) do
+		if type(key) == "string" and key ~= "layoutV12" and key:find("Layout$")
+			and value == true and key:lower() ~= "layoutv12" then
+			CUF.db.layoutV12 = true
+			CUF.db[key] = nil
+		end
+	end
+	if CUF.db.castbar.targetPlacement ~= "custom" then
+		CUF.db.castbar.targetPlacement = "blizzard"
+	end
+	if not CUF.db.layoutV12 then
+		CUF.db.layoutV12 = true
+		CUF.db.powerText = "currentmax"
+		CUF.db.targetAuras.buffs, CUF.db.targetAuras.debuffs = 32, 16
+		CUF.db.units.pet.attached = true
+		CUF.db.units.targettarget.attached = true
+		CUF.db.party.spacing = 10
+		CUF.db.castbar.targetAttached = true
+		CUF.db.castbar.targetPlacement = "blizzard"
+		CUF.db.levelNudgeX, CUF.db.levelNudgeY = 0, 0
 	end
 
 	if CUF.db.castbar.targetOffsetY then
@@ -935,14 +1022,27 @@ end
 -- puts the candidates on screen and lets the eye decide.
 -- ---------------------------------------------------------------------------
 
+-- Every classic texture the addon draws, in the order the check lists them.
+local ART_CHECK = {
+	"frame", "elite", "rare", "rareElite", "minus", "smallFrame", "partyFrame", "totFrame",
+	"statusBar", "levelBg", "skull", "portraitMask", "stateIcon", "playerStatus", "attackBg",
+	"leaderIcon", "groupIndicator", "raidIcons", "petHappiness", "questBadge", "partyFlash", "flash",
+	"castBorder", "castBorderSmall", "castShieldSmall", "castSpark", "castFlash", "castFlashSmall",
+}
+
 function CUF:ShowArtCheck()
 	local f = CUF.ArtFrame
 	if not f then
+		local columns, rowHeight, columnWidth = 2, 40, 370
+		local rows = math.ceil(#ART_CHECK / columns)
+
 		f = CreateFrame("Frame", "SquawkClassicUF_ArtCheck", UIParent, "BackdropTemplate")
 		CUF.ArtFrame = f
-		f:SetSize(560, 350)
+		-- sized from its contents, so every entry fits
+		f:SetSize(columns * columnWidth + 20, 44 + rows * rowHeight + 44)
 		f:SetPoint("CENTER")
 		f:SetFrameStrata("DIALOG")
+		f:SetClampedToScreen(true)
 		f:EnableMouse(true)
 		f:SetMovable(true)
 		f:SetScript("OnMouseDown", function(self) self:StartMoving() end)
@@ -952,39 +1052,46 @@ function CUF:ShowArtCheck()
 			edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 14,
 			insets = { left = 3, right = 3, top = 3, bottom = 3 },
 		})
-		f:SetBackdropColor(0, 0, 0, 0.9)
+		f:SetBackdropColor(0, 0, 0, 0.92)
 
 		local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-		title:SetPoint("TOP", f, "TOP", 0, -12)
-		title:SetText("Classic art check - anything blank or green is missing from this client")
+		title:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -14)
+		title:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, -14)
+		title:SetJustifyH("LEFT")
+		title:SetText("Classic art check - anything blank or marked MISSING is not shipped by this client")
 
-		local y = -40
-		for _, name in ipairs({ "frame", "statusBar", "partyFrame", "totFrame", "smallFrame", "castFill", "castBorder", "raidIcons", "stateIcon", "petHappiness" }) do
-			local label = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-			label:SetPoint("TOPLEFT", f, "TOPLEFT", 16, y - 14)
-			label:SetText(name .. ":")
-			label:SetWidth(90)
-			label:SetJustifyH("LEFT")
+		for index, name in ipairs(ART_CHECK) do
+			local column = (index - 1) % columns
+			local row = math.floor((index - 1) / columns)
+			local x = 12 + column * columnWidth
+			local y = -40 - row * rowHeight
 
 			local tex = f:CreateTexture(nil, "ARTWORK")
 			tex:SetTexture(CUF.Art[name])
-			tex:SetPoint("TOPLEFT", f, "TOPLEFT", 110, y)
-			tex:SetSize(200, 40)
+			tex:SetPoint("TOPLEFT", f, "TOPLEFT", x, y)
+			tex:SetSize(120, rowHeight - 6)
+
+			local label = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+			label:SetPoint("TOPLEFT", tex, "TOPRIGHT", 8, -2)
+			label:SetWidth(columnWidth - 140)
+			label:SetJustifyH("LEFT")
+			pcall(label.SetWordWrap, label, false)
+			label:SetText(name)
 
 			local path = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-			path:SetPoint("TOPLEFT", f, "TOPLEFT", 320, y - 14)
+			path:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -2)
+			path:SetWidth(columnWidth - 140)
+			path:SetJustifyH("LEFT")
+			pcall(path.SetWordWrap, path, false)
 			path:SetText((CUF:TextureExists(CUF.Art[name])
 				and "|cff00ff00present|r  " or "|cffff0000MISSING|r  ")
 				.. CUF.Art[name]:gsub("Interface\\", ""))
-			path:SetWidth(230)
-			path:SetJustifyH("LEFT")
-			y = y - 44
 		end
 
 		local close = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-		close:SetSize(80, 22)
-		close:SetPoint("BOTTOM", f, "BOTTOM", 0, 10)
-		close:SetText("Close")
+		close:SetSize(90, 22)
+		close:SetPoint("BOTTOM", f, "BOTTOM", 0, 12)
+		close:SetText(_G.CLOSE or "Close")
 		close:SetScript("OnClick", function() f:Hide() end)
 	end
 	f:Show()

@@ -18,7 +18,8 @@ local Art = CUF.Art
 Group.party = {}          -- Classic 128x53 party frames
 Group.partyCompact = {}   -- the same party, drawn as raid-style boxes
 Group.raid = {}
-Group.partyPets = {}        -- partypet1..4 beside the Classic party frames
+Group.partyPets = {}        -- partypet1..4 beside the Classic party frames (bar style)
+Group.partyClassicPets = {} -- partypet1..4 as vanilla's small frame under the portrait
 Group.partyCompactPets = {} -- pet, partypet1..4 under the raid-style party
 Group.raidPets = {}         -- raidpet1..40
 
@@ -28,14 +29,24 @@ local function petHeight(settings)
 end
 
 -- Classic PartyMemberFrame geometry
+-- The classic party frame on Blizzard's 120x53 PartyMemberFrame
+-- geometry: the classic art hangs 10px down, the
+-- bars sit on a black plate, and the debuffs run in a row underneath.
 local PARTY = {
-	width = 128, height = 53,
-	artWidth = 128, artHeight = 64, artX = 0, artY = -2,
-	portraitSize = 37, portraitX = 7, portraitY = -6,
+	width = 120, height = 53,
+	artWidth = 128, artHeight = 64, artX = 0, artY = -10,
+	flashX = -3, flashY = -6,
+	portraitSize = 37, portraitX = 7, portraitY = -14,
+	backdropWidth = 72, backdropHeight = 20, backdropX = 45, backdropY = -19,
 	barWidth = 70, barHeight = 8,
-	healthX = 47, healthY = -12,
-	manaX = 47, manaY = -22,
-	nameX = 50, nameY = 43,
+	healthX = 47, healthY = -22,
+	manaX = 47, manaY = -31,
+	nameX = 49, nameY = -7,          -- TOPLEFT
+	leaderX = 0, leaderY = -8,
+	-- Blizzard's AuraFrameContainer: 15px icons, 2px apart, up to 4 debuffs
+	auraX = 48, auraY = -43, auraSize = 15, auraSpacing = 2, auraCount = 4,
+	-- Blizzard spaces the party 10px apart, 26 while party pets show
+	petSpacing = 16,
 }
 
 -- See Units.lua: a secret class name cannot be used as a table key.
@@ -60,10 +71,13 @@ local function updateFrame(frame)
 	frame.Health:SetValue(UnitHealth(unit))
 
 	local color = classColor(unit)
-	if CUF.db.classColorHealth and color then
+	if CUF.SafeFlag(UnitIsConnected(unit)) == false then
+		frame.Health:SetStatusBarColor(0.5, 0.5, 0.5)
+	elseif CUF.db.classColorHealth and color then
 		frame.Health:SetStatusBarColor(color[1], color[2], color[3])
 	else
-		frame.Health:SetStatusBarColor(0.1, 0.8, 0.1)
+		local green = CUF.HealthGreen
+		frame.Health:SetStatusBarColor(green[1], green[2], green[3])
 	end
 
 	if frame.Power then
@@ -86,6 +100,48 @@ local function updateFrame(frame)
 		CUF.Auras:Update(frame)
 	end
 
+	if frame.PowerText then
+		frame.PowerText:SetText(CUF.PowerText(unit, CUF.db.powerText))
+	end
+
+	-- Blizzard's threat glow on the member
+	if frame.Flash then
+		local status
+		if CUF.db.threatGlow and type(UnitThreatSituation) == "function" then
+			local ok, value = pcall(UnitThreatSituation, unit)
+			status = ok and CUF.SafeNumber(value) or nil
+		end
+		if status and status > 0 then
+			local r, g, b = 1, 0, 0
+			if type(GetThreatStatusColor) == "function" then
+				local got, cr, cg, cb = pcall(GetThreatStatusColor, status)
+				if got and CUF.SafeNumber(cr) then r, g, b = cr, cg, cb end
+			end
+			frame.Flash:SetVertexColor(r, g, b)
+			frame.Flash:Show()
+		else
+			frame.Flash:Hide()
+		end
+	end
+
+	-- the member's debuffs, up to four, as Blizzard's party frame shows them
+	if frame.PartyAuras then
+		local petFrame = Group.partyClassicPets and Group.partyClassicPets[tonumber(unit:match("%d") or "")]
+		Group:PlacePartyAuras(frame, petFrame and petFrame:IsShown() and UnitExists(petFrame.unit))
+		local shown = 0
+		if CUF.Auras then
+			CUF.Auras:ForEach(unit, "HARMFUL", function(_, dispelType, texture, count, index, spellId, data)
+				if not texture then return false end
+				shown = shown + 1
+				local icon = frame.PartyAuras[shown]
+				if not icon then return true end
+				CUF.Units.ShowAura(icon, unit, "HARMFUL", texture, count, index, spellId, dispelType, data)
+				return shown >= #frame.PartyAuras
+			end)
+		end
+		for slot = shown + 1, #frame.PartyAuras do frame.PartyAuras[slot]:Hide() end
+	end
+
 	CUF:UpdateRaidTargetIcon(frame)
 
 	if frame.HealthText then
@@ -94,11 +150,21 @@ local function updateFrame(frame)
 
 	if frame.Portrait then
 		if CUF.db.showPortraits then
+			CUF.Units:ApplyPortraitMask(frame)
 			frame.Portrait:Show()
 			pcall(SetPortraitTexture, frame.Portrait, unit)
 		else
 			frame.Portrait:Hide()
 		end
+	end
+
+	if frame.LeaderIcon then
+		local shown = false
+		if CUF.db.showLeader and type(UnitIsGroupLeader) == "function" then
+			local ok, leader = pcall(UnitIsGroupLeader, unit)
+			shown = ok and CUF.SafeFlag(leader) == true
+		end
+		frame.LeaderIcon:SetShown(shown)
 	end
 
 	if frame.StatusText then
@@ -123,7 +189,7 @@ local function registerEvents(frame)
 	for _, event in ipairs({
 		"UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_POWER_UPDATE", "UNIT_MAXPOWER",
 		"UNIT_DISPLAYPOWER", "UNIT_NAME_UPDATE", "UNIT_PORTRAIT_UPDATE",
-		"UNIT_CONNECTION", "UNIT_AURA",
+		"UNIT_CONNECTION", "UNIT_AURA", "UNIT_PORTRAIT_UPDATE",
 	}) do
 		pcall(frame.RegisterUnitEvent, frame, event, frame.unit)
 	end
@@ -159,6 +225,19 @@ function Group:CreatePartyFrame(index)
 	local frame = makeUnitButton("SquawkClassicUF_Party" .. index, "party" .. index)
 	frame:SetSize(PARTY.width, PARTY.height)
 
+	-- the threat glow behind the frame
+	frame.Flash = frame:CreateTexture(nil, "BACKGROUND")
+	frame.Flash:SetDrawLayer("BACKGROUND", -7)
+	frame.Flash:SetTexture(Art.partyFlash)
+	frame.Flash:SetSize(128, 64)
+	frame.Flash:SetPoint("TOPLEFT", frame, "TOPLEFT", PARTY.flashX, PARTY.flashY)
+	frame.Flash:Hide()
+
+	frame.Backdrop = frame:CreateTexture(nil, "BACKGROUND")
+	frame.Backdrop:SetSize(PARTY.backdropWidth, PARTY.backdropHeight)
+	frame.Backdrop:SetColorTexture(0, 0, 0, 0.5)
+	frame.Backdrop:SetPoint("TOPLEFT", frame, "TOPLEFT", PARTY.backdropX, PARTY.backdropY)
+
 	frame.Portrait = frame:CreateTexture(nil, "BORDER")
 	frame.Portrait:SetSize(PARTY.portraitSize, PARTY.portraitSize)
 	frame.Portrait:SetPoint("TOPLEFT", frame, "TOPLEFT", PARTY.portraitX, PARTY.portraitY)
@@ -179,11 +258,22 @@ function Group:CreatePartyFrame(index)
 	frame.Art:SetPoint("TOPLEFT", frame, "TOPLEFT", PARTY.artX, PARTY.artY)
 
 	frame.Name = frame.ArtFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-	frame.Name:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", PARTY.nameX, PARTY.nameY)
+	frame.Name:SetPoint("TOPLEFT", frame, "TOPLEFT", PARTY.nameX, PARTY.nameY)
 	frame.Name:SetJustifyH("LEFT")
 
 	frame.HealthText = frame.ArtFrame:CreateFontString(nil, "OVERLAY", "TextStatusBarText")
 	frame.HealthText:SetPoint("CENTER", frame.Health, "CENTER", 0, 0)
+	frame.PowerText = frame.ArtFrame:CreateFontString(nil, "OVERLAY", "TextStatusBarText")
+	frame.PowerText:SetPoint("CENTER", frame.Power, "CENTER", 0, 0)
+
+	-- the debuff row underneath
+	frame.PartyAuras = {}
+	for slot = 1, PARTY.auraCount do
+		local icon = CUF.Units:CreateAuraButton(frame, true)
+		icon:SetSize(PARTY.auraSize, PARTY.auraSize)
+		frame.PartyAuras[slot] = icon
+	end
+	Group:PlacePartyAuras(frame, false)
 
 	frame.StatusText = frame.ArtFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	frame.StatusText:SetPoint("CENTER", frame.Health, "CENTER", 0, 0)
@@ -192,6 +282,72 @@ function Group:CreatePartyFrame(index)
 
 	CUF:CreateRaidTargetIcon(frame, frame.ArtFrame, 16)
 	frame.RaidIcon:SetPoint("CENTER", frame.Portrait, "TOP", 0, 0)
+
+	-- the leader's crown in the top-left corner (vanilla: TOPLEFT 0,0)
+	frame.LeaderIcon = frame.ArtFrame:CreateTexture(nil, "OVERLAY")
+	frame.LeaderIcon:SetSize(16, 16)
+	frame.LeaderIcon:SetTexture(CUF.Art.leaderIcon)
+	frame.LeaderIcon:SetPoint("TOPLEFT", frame, "TOPLEFT", PARTY.leaderX, PARTY.leaderY)
+	frame.LeaderIcon:Hide()
+
+	CUF:AttachTooltip(frame)
+	registerEvents(frame)
+	frame:RegisterEvent("PARTY_LEADER_CHANGED")
+	frame:RegisterEvent("GROUP_ROSTER_UPDATE")
+	pcall(frame.RegisterUnitEvent, frame, "UNIT_THREAT_SITUATION_UPDATE", frame.unit)
+	return frame
+end
+
+-- The debuff row starts at Blizzard's (48, -43); a classic party pet sits at
+-- (23, -43) and would cover it, so while one is out the row starts past it.
+function Group:PlacePartyAuras(frame, petShown)
+	local x = petShown and (23 + 64 + 4) or PARTY.auraX
+	for slot, icon in ipairs(frame.PartyAuras or {}) do
+		icon:ClearAllPoints()
+		icon:SetPoint("TOPLEFT", frame, "TOPLEFT",
+			x + (slot - 1) * (PARTY.auraSize + PARTY.auraSpacing), PARTY.auraY)
+	end
+end
+
+-- Vanilla's party pet: the party frame art at half size, a small round
+-- portrait and a thin health bar, hung under the member's portrait
+-- (PartyMemberPetFrame, on the member).
+-- Blizzard's PartyMemberPetFrame (64x23 at the member's 23,-43) with
+-- the classic art on it: the party art at half size at 0,-1, the
+-- 18px portrait at 3,-3, the name above and a 35x4 health bar at 23,-6.
+local CLASSIC_PET = {
+	width = 64, height = 23,
+	portraitSize = 18, portraitX = 3, portraitY = -3,
+	barWidth = 35, barHeight = 4, barX = 23, barY = -6,
+	nameX = 25, nameY = 21,
+	x = 23, y = -43,
+}
+
+function Group:CreateClassicPartyPet(index)
+	local frame = makeUnitButton("SquawkClassicUF_PartyPetClassic" .. index, "partypet" .. index)
+	frame:SetSize(CLASSIC_PET.width, CLASSIC_PET.height)
+	frame.isPet = true
+
+	frame.Portrait = frame:CreateTexture(nil, "BORDER")
+	frame.Portrait:SetSize(CLASSIC_PET.portraitSize, CLASSIC_PET.portraitSize)
+	frame.Portrait:SetPoint("TOPLEFT", frame, "TOPLEFT", CLASSIC_PET.portraitX, CLASSIC_PET.portraitY)
+
+	frame.Health = createBar(frame, CLASSIC_PET.barWidth, CLASSIC_PET.barHeight)
+	frame.Health:SetPoint("TOPLEFT", frame, "TOPLEFT", CLASSIC_PET.barX, CLASSIC_PET.barY)
+
+	frame.ArtFrame = CreateFrame("Frame", nil, frame)
+	frame.ArtFrame:SetAllPoints(frame)
+	frame.ArtFrame:SetFrameLevel(frame:GetFrameLevel() + 3)
+
+	frame.Art = frame.ArtFrame:CreateTexture(nil, "ARTWORK")
+	frame.Art:SetTexture(Art.partyFrame)
+	frame.Art:SetSize(64, 32)
+	frame.Art:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, -1)
+
+	frame.Name = frame.ArtFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	frame.Name:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", CLASSIC_PET.nameX, CLASSIC_PET.nameY)
+	frame.Name:SetJustifyH("LEFT")
+	pcall(frame.Name.SetWordWrap, frame.Name, false)
 
 	CUF:AttachTooltip(frame)
 	registerEvents(frame)
@@ -306,9 +462,11 @@ end
 
 function Group:LayoutParty()
 	local settings = CUF.db.party
+	local classicPets = settings.showPetFrames and (settings.petStyle or "classic") == "classic"
+	local step = PARTY.height + settings.spacing + (classicPets and PARTY.petSpacing or 0)
 	for index, frame in ipairs(Group.party) do
 		frame:SetScale(settings.scale or 1)
-		anchorTo(frame, settings, 0, -(index - 1) * (PARTY.height + settings.spacing))
+		anchorTo(frame, settings, 0, -(index - 1) * step)
 	end
 	for index, pet in ipairs(Group.partyPets) do
 		pet:SetScale(settings.scale or 1)
@@ -316,6 +474,12 @@ function Group:LayoutParty()
 		pet.Health:SetSize(PARTY_PET.width - 4, PARTY_PET.height - 4)
 		pet:ClearAllPoints()
 		pet:SetPoint("TOPLEFT", Group.party[index], "TOPRIGHT", PARTY_PET.x, PARTY_PET.y)
+	end
+	-- the classic pet hangs off its owner, so it follows the owner's scale
+	for index, pet in ipairs(Group.partyClassicPets) do
+		pet:SetScale(1)
+		pet:ClearAllPoints()
+		pet:SetPoint("TOPLEFT", Group.party[index], "TOPLEFT", CLASSIC_PET.x, CLASSIC_PET.y)
 	end
 end
 
@@ -474,8 +638,12 @@ function Group:UpdateVisibility()
 		end
 	end
 	local partyPets = CUF.db.party.showPetFrames
+	local classicPets = (CUF.db.party.petStyle or "classic") == "classic"
 	for _, frame in ipairs(Group.partyPets) do
-		watch(frame, classicStyle and partyPets)
+		watch(frame, classicStyle and partyPets and not classicPets)
+	end
+	for _, frame in ipairs(Group.partyClassicPets) do
+		watch(frame, classicStyle and partyPets and classicPets)
 	end
 	for _, frame in ipairs(Group.partyCompactPets) do
 		local wanted = boxStyle and inGroup and partyPets
@@ -570,6 +738,7 @@ function Group:UpdateRange()
 	for _, frame in ipairs(Group.partyCompact) do updateRange(frame) end
 	for _, frame in ipairs(Group.raid) do updateRange(frame) end
 	for _, frame in ipairs(Group.partyPets) do updateRange(frame) end
+	for _, frame in ipairs(Group.partyClassicPets) do updateRange(frame) end
 	for _, frame in ipairs(Group.partyCompactPets) do updateRange(frame) end
 	for _, frame in ipairs(Group.raidPets) do updateRange(frame) end
 end
@@ -578,7 +747,7 @@ end
 function Group:AllFrames()
 	local all = {}
 	for _, list in ipairs({ Group.party, Group.partyCompact, Group.raid,
-		Group.partyPets, Group.partyCompactPets, Group.raidPets }) do
+		Group.partyPets, Group.partyClassicPets, Group.partyCompactPets, Group.raidPets }) do
 		for _, frame in ipairs(list) do all[#all + 1] = frame end
 	end
 	return all
@@ -600,6 +769,7 @@ function Group:Initialize()
 		-- Pets are built whatever the option says, for the same reason.
 		for index = 1, 4 do
 			Group.partyPets[index] = Group:CreatePetFrame("SquawkClassicUF_PartyPet" .. index, "partypet" .. index)
+			Group.partyClassicPets[index] = Group:CreateClassicPartyPet(index)
 		end
 		for index, unit in ipairs({ "pet", "partypet1", "partypet2", "partypet3", "partypet4" }) do
 			Group.partyCompactPets[index] = Group:CreatePetFrame("SquawkClassicUF_PartyBoxPet" .. index, unit)
@@ -675,6 +845,10 @@ function Group:UpdateAll()
 				frame.Health:SetStatusBarTexture(CUF:RaidBarTexture())
 				updateFrame(frame)
 			end
+		end
+		for _, frame in ipairs(Group.partyClassicPets) do
+			frame.Health:SetStatusBarTexture(CUF:BarTexture())
+			updateFrame(frame)
 		end
 	end)
 end
