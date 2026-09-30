@@ -168,16 +168,17 @@ local function updateFrame(frame)
 	end
 
 	if frame.StatusText then
-		-- Secret booleans throw on a truth test, so an unreadable answer must
-		-- fall through to "nothing to say" rather than claim someone is dead.
-		if CUF.SafeFlag(UnitIsDeadOrGhost(unit)) == true then
-			frame.StatusText:SetText("Dead")
+		-- Dead or offline: the word alone, no numbers, as Blizzard's frames.
+		local numbers = { frame.HealthText, frame.PowerText }
+		local offline = CUF.SafeFlag(UnitIsConnected(unit)) == false
+		if offline then
+			frame.StatusText:SetText(_G.PLAYER_OFFLINE or "Offline")
+			frame.StatusText:SetAlpha(1)
 			frame.StatusText:Show()
-		elseif CUF.SafeFlag(UnitIsConnected(unit)) == false then
-			frame.StatusText:SetText("Offline")
-			frame.StatusText:Show()
+			for _, text in ipairs(numbers) do text:SetText("") text:SetAlpha(1) end
 		else
-			frame.StatusText:Hide()
+			frame.StatusText:SetText(_G.DEAD or "Dead")
+			CUF.ApplyDeadText(unit, frame.StatusText, unpack(numbers))
 		end
 	end
 end

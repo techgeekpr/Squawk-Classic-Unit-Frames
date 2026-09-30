@@ -135,9 +135,11 @@ local function updateHealth(frame)
 	if frame.HealthText then
 		frame.HealthText:SetText(CUF.HealthText(unit, CUF.db.healthText))
 	end
-	if frame.Dead then
-		frame.Dead:SetShown(UnitIsDeadOrGhost(unit) and true or false)
+	if frame.PowerText then
+		frame.PowerText:SetText(CUF.PowerText(unit, CUF.db.powerText))
 	end
+	-- dead: only the word, no numbers on either bar
+	CUF.ApplyDeadText(unit, frame.Dead, frame.HealthText, frame.PowerText)
 end
 
 local function updatePower(frame)
@@ -149,6 +151,7 @@ local function updatePower(frame)
 	frame.Power:SetStatusBarColor(color[1], color[2], color[3])
 	if frame.PowerText then
 		frame.PowerText:SetText(CUF.PowerText(unit, CUF.db.powerText))
+		CUF.ApplyDeadText(unit, frame.Dead, frame.HealthText, frame.PowerText)
 	end
 end
 

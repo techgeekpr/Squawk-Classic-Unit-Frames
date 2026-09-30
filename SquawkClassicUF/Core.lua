@@ -202,6 +202,35 @@ local function statusText(current, maximum, mode)
 	return secretText(current, maximum, mode == "percent" and "currentmax" or mode)
 end
 
+-- A dead unit shows "Dead" and no numbers, as Blizzard's frames do.  The
+-- answer can be secret: then the numbers and the label are shown or hidden
+-- by the secret itself (SetAlphaFromBoolean), without it ever being read.
+function CUF.ApplyDeadText(unit, label, ...)
+	local raw = UnitIsDeadOrGhost(unit)
+	local dead = CUF.SafeFlag(raw)
+	local texts = { ... }
+	if dead ~= nil then
+		for _, text in ipairs(texts) do
+			if dead then text:SetText("") end
+			text:SetAlpha(1)
+		end
+		if label then label:SetShown(dead) label:SetAlpha(1) end
+		return dead
+	end
+	for _, text in ipairs(texts) do
+		if not (text.SetAlphaFromBoolean and pcall(text.SetAlphaFromBoolean, text, raw, 0, 1)) then
+			text:SetAlpha(1)
+		end
+	end
+	if label then
+		label:Show()
+		if not (label.SetAlphaFromBoolean and pcall(label.SetAlphaFromBoolean, label, raw, 1, 0)) then
+			label:Hide()
+		end
+	end
+	return nil
+end
+
 function CUF.HealthText(unit, mode)
 	return statusText(UnitHealth(unit), UnitHealthMax(unit), mode)
 end
